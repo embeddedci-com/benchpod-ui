@@ -1,0 +1,31 @@
+{
+  "name": "benchpod-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared BenchPod UI: the agent chat and the capture views. Linked by path into benchpod-desktop and embeddedci-server, not published.",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@mantine/core": "^9.7.0",
+    "@mantine/hooks": "^9.6.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^27.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
+  },
+  "peerDependencies": {
+    "@mantine/core": "^9.6.3",
+    "@mantine/hooks": "^9.6.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "license": "Apache-2.0"
+}
