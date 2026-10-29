@@ -22,6 +22,8 @@ export type UseChatOptions = {
   base: string
   /** Extra request headers (a host's auth or a demo session id). */
   headers?: () => Record<string, string>
+  /** Extra fields for the send body (the model a host lets the user pick). */
+  extraBody?: () => Record<string, unknown>
   /** Every event, before the hook handles it: for a host's own event types. */
   onEvent?: (e: ChatEvent) => void
   /** Load the saved conversation on mount (default true). */
@@ -138,7 +140,7 @@ export function useChat(opts: UseChatOptions) {
         const r = await fetch(`${base}/send`, {
           method: 'POST',
           headers: headers(true),
-          body: JSON.stringify({ text: t }),
+          body: JSON.stringify({ ...(optsRef.current.extraBody?.() ?? {}), text: t }),
           credentials: 'same-origin',
           signal: ac.signal,
         })
