@@ -7,6 +7,7 @@ export type AdcCapture = {
   sample_rate_hz: number
   duration: number
   unit?: 'V' | 'A'
+  source?: string | null
   mean: number
   min: number
   max: number

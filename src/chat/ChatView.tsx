@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ActionIcon, Alert, Box, Button, Group, Loader, Modal, ScrollArea, Stack, Text, Textarea, UnstyledButton } from '@mantine/core'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ActionIcon, Alert, Anchor, Box, Button, Drawer, Group, Loader, Modal, ScrollArea, Stack, Text, Textarea, Tooltip, UnstyledButton } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { Markdown } from './Markdown'
 import { ResultView } from '../results/ResultView'
-import { ToolsList, type ToolInfo } from './ToolsList'
+import { ToolsList, groupTools, type ToolInfo } from './ToolsList'
+import { BenchPanel, benchOutputs, panelKind, type CaptureEntry, type ConsoleEntry, type PanelTab } from './BenchPanel'
 import type { ChatItem } from './useChat'
 import type { ToolCall } from './protocol'
 
@@ -28,11 +30,22 @@ export function callSummary(call: ToolCall, max = 90): string {
   return `${call.name}(${inner.length > max ? inner.slice(0, max - 1) + '…' : inner})`
 }
 
-function ToolRow({ item, onConfirm }: { item: Extract<ChatItem, { kind: 'tool' }>; onConfirm: (id: string, ok: boolean) => void }) {
+function ToolRow({
+  item,
+  onConfirm,
+  inPanel,
+  onOpenPanel,
+}: {
+  item: Extract<ChatItem, { kind: 'tool' }>
+  onConfirm: (id: string, ok: boolean) => void
+  /** The panel shows this result: the transcript keeps a summary line that opens it. */
+  inPanel?: { kind: 'console' | 'captures'; summary: string }
+  onOpenPanel?: (kind: 'console' | 'captures', id: string) => void
+}) {
   const done = !!item.result
   const err = item.result?.is_error
   const [open, setOpen] = useState<boolean | null>(null)
-  const expanded = open ?? (done && !err && !item.refused && OPEN_BY_DEFAULT.test(item.call.name))
+  const expanded = open ?? (done && !err && !item.refused && !inPanel && OPEN_BY_DEFAULT.test(item.call.name))
   const dot = item.confirming
     ? 'var(--mantine-color-yellow-5)'
     : !done
@@ -85,6 +98,13 @@ function ToolRow({ item, onConfirm }: { item: Extract<ChatItem, { kind: 'tool' }
           ⎿ {item.result!.text}
         </Text>
       ) : null}
+      {inPanel && !expanded && onOpenPanel ? (
+        <UnstyledButton onClick={() => onOpenPanel(inPanel.kind, item.id)} ml={16} mt={2} style={{ display: 'block' }}>
+          <Text size="xs" ff={MONO} c="blue" lineClamp={1}>
+            ⎿ {inPanel.summary} ↗
+          </Text>
+        </UnstyledButton>
+      ) : null}
       {expanded && item.result ? (
         <Box ml={16} mt={4} mb={4}>
           <ResultView tool={item.call.name} structured={item.result.structured} text={item.result.text} />
@@ -118,12 +138,77 @@ export type ChatViewProps = {
   toolsReferenceHref?: string
   /** A "Help" link beside the message box: how to use the agent. */
   helpHref?: string
+  /** The bench panel beside the conversation (console, captures). On by default. */
+  panel?: boolean
+  /** More panel tabs from the host (the demo's "About"). */
+  panelTabs?: PanelTab[]
+  /** Open the panel on this tab before there is any output (default: closed until output). */
+  panelInitialTab?: string
+}
+
+/** A small line icon (24x24 path), in the current text color. */
+function Icon({ d }: { d: string }) {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
+    </svg>
+  )
+}
+
+function consoleSummary(e: ConsoleEntry): string {
+  if (e.dir === 'in') return `typed "${e.text.trim()}"`
+  const lines = e.text.split('\n').filter((l) => l.trim()).length
+  return `${lines} console line${lines === 1 ? '' : 's'}`
 }
 
 /** The agent conversation: transcript, tool calls with their results, and the composer. */
 export function ChatView(p: ChatViewProps) {
   const [draft, setDraft] = useState('')
   const [toolsOpen, setToolsOpen] = useState(false)
+  const panelOn = p.panel !== false
+  // Read synchronously: a phone must never see the panel open itself on the first render.
+  const wide = useMediaQuery('(min-width: 62em)', false, { getInitialValueInEffect: false })
+  const outputs = useMemo(() => benchOutputs(p.items), [p.items])
+  const [panelOpen, setPanelOpen] = useState(!!p.panelInitialTab && wide)
+  const [panelTab, setPanelTab] = useState(p.panelInitialTab ?? 'console')
+  const [selected, setSelected] = useState<string | undefined>()
+  const seen = useRef({ console: 0, captures: 0 })
+  // The panel opens by itself on the first console output or capture, at that tab, and moves
+  // to the newest capture as they come; after that the reader decides.
+  useEffect(() => {
+    if (!panelOn) return
+    if (p.items.length === 0) {
+      // A new conversation starts like a fresh visit.
+      seen.current = { console: 0, captures: 0 }
+      setPanelTab(p.panelInitialTab ?? 'console')
+      setPanelOpen(!!p.panelInitialTab && wide)
+      return
+    }
+    const c = outputs.console.length
+    const k = outputs.captures.length
+    if (k > seen.current.captures) {
+      setPanelTab('captures')
+      setSelected(outputs.captures[k - 1].id)
+      if (seen.current.captures === 0 && seen.current.console === 0) setPanelOpen(wide)
+    } else if (c > seen.current.console && seen.current.console === 0 && seen.current.captures === 0) {
+      setPanelTab('console')
+      setPanelOpen(wide)
+    }
+    seen.current = { console: c, captures: k }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outputs, panelOn, wide])
+  const openPanel = (kind: 'console' | 'captures', id: string) => {
+    setPanelTab(kind)
+    if (kind === 'captures') setSelected(id)
+    setPanelOpen(true)
+  }
+  const inPanel = (id: string): { kind: 'console' | 'captures'; summary: string } | undefined => {
+    if (!panelOn) return undefined
+    const kind = panelKind(outputs, id)
+    if (kind === 'captures') return { kind, summary: (outputs.captures.find((c) => c.id === id) as CaptureEntry).title }
+    if (kind === 'console') return { kind, summary: consoleSummary(outputs.console.find((c) => c.id === id) as ConsoleEntry) }
+    return undefined
+  }
   const viewport = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   // Follow the conversation to its end unless the reader scrolled up. Content grows without a
@@ -178,8 +263,20 @@ export function ChatView(p: ChatViewProps) {
   const lastIsTool = p.items[p.items.length - 1]?.kind === 'tool'
   const thinking = p.running && !lastIsTool && p.items[p.items.length - 1]?.kind !== 'assistant'
 
+  const panel = (
+    <BenchPanel
+      outputs={outputs}
+      tab={panelTab}
+      onTab={setPanelTab}
+      selected={selected}
+      onSelect={setSelected}
+      extraTabs={p.panelTabs}
+    />
+  )
+
   return (
-    <Stack gap={0} h={p.height ?? '100%'} style={{ minHeight: 0 }}>
+    <Group gap={0} wrap="nowrap" align="stretch" h={p.height ?? '100%'} style={{ minHeight: 0 }}>
+    <Stack gap={0} h="100%" style={{ minHeight: 0, flex: 1, minWidth: 0 }}>
       <style>{`@keyframes bpui-pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }`}</style>
       <ScrollArea
         viewportRef={viewport}
@@ -205,12 +302,12 @@ export function ChatView(p: ChatViewProps) {
                 </Stack>
               ) : null}
               {p.tools?.length ? (
-                <Box p="sm" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 8 }}>
-                  <Text size="sm" fw={600} mb="xs">
-                    The agent can use {p.tools.length} BenchPod tools (the BenchPod MCP server's):
-                  </Text>
-                  <ToolsList tools={p.tools} referenceHref={p.toolsReferenceHref} />
-                </Box>
+                <Text size="sm" c="dimmed">
+                  {p.tools.length} BenchPod tools: {groupTools(p.tools).map((g) => g.title).join(' · ')}.{' '}
+                  <Anchor component="button" size="sm" onClick={() => setToolsOpen(true)}>
+                    See all
+                  </Anchor>
+                </Text>
               ) : null}
             </Stack>
           ) : null}
@@ -231,7 +328,7 @@ export function ChatView(p: ChatViewProps) {
                   </Box>
                 )
               case 'tool':
-                return <ToolRow key={it.id} item={it} onConfirm={p.onConfirm} />
+                return <ToolRow key={it.id} item={it} onConfirm={p.onConfirm} inPanel={inPanel(it.id)} onOpenPanel={openPanel} />
               case 'notice':
                 return (
                   <Alert key={it.id} color={it.level === 'error' ? 'red' : it.level === 'warning' ? 'yellow' : 'gray'} variant="light" p="xs">
@@ -281,16 +378,27 @@ export function ChatView(p: ChatViewProps) {
             )}
           </Group>
           {p.footer || p.tools?.length || p.helpHref ? (
-            <Group mt={6} gap="xs" align="flex-start" wrap="nowrap">
+            <Group mt={6} gap={4} align="center" wrap="nowrap">
               {p.tools?.length ? (
-                <Button size="compact-xs" variant="subtle" onClick={() => setToolsOpen(true)} style={{ flex: 'none' }}>
-                  {p.tools.length} tools
-                </Button>
+                <Tooltip label={`The agent's ${p.tools.length} BenchPod tools`}>
+                  <ActionIcon variant="subtle" size="sm" onClick={() => setToolsOpen(true)} aria-label="Tools">
+                    <Icon d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" />
+                  </ActionIcon>
+                </Tooltip>
+              ) : null}
+              {panelOn ? (
+                <Tooltip label={panelOpen ? 'Hide the console and captures' : 'Show the console and captures'}>
+                  <ActionIcon variant={panelOpen ? 'light' : 'subtle'} size="sm" onClick={() => setPanelOpen(!panelOpen)} aria-label="Bench panel">
+                    <Icon d="M4 4h16v16H4zM14 4v16" />
+                  </ActionIcon>
+                </Tooltip>
               ) : null}
               {p.helpHref ? (
-                <Button size="compact-xs" variant="subtle" component="a" href={p.helpHref} target="_blank" rel="noopener" style={{ flex: 'none' }}>
-                  Help
-                </Button>
+                <Tooltip label="How to use the agent">
+                  <ActionIcon variant="subtle" size="sm" component="a" href={p.helpHref} target="_blank" rel="noopener" aria-label="Help">
+                    <Icon d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5" />
+                  </ActionIcon>
+                </Tooltip>
               ) : null}
               <Box style={{ flex: 1, minWidth: 0 }}>{p.footer}</Box>
             </Group>
@@ -301,5 +409,23 @@ export function ChatView(p: ChatViewProps) {
         {p.tools ? <ToolsList tools={p.tools} referenceHref={p.toolsReferenceHref} /> : null}
       </Modal>
     </Stack>
+      {panelOn && panelOpen && wide ? (
+        <Box style={{ width: '44%', minWidth: 340, maxWidth: 720, flex: 'none', borderLeft: '1px solid var(--mantine-color-default-border)', minHeight: 0 }}>
+          {panel}
+        </Box>
+      ) : null}
+      {panelOn && !wide ? (
+        <Drawer
+          opened={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          position="right"
+          size="100%"
+          title="Bench"
+          styles={{ content: { background: 'var(--mantine-color-body)' }, body: { height: 'calc(100% - 60px)' } }}
+        >
+          {panel}
+        </Drawer>
+      ) : null}
+    </Group>
   )
 }

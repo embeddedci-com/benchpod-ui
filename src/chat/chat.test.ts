@@ -95,3 +95,29 @@ describe('groupTools', () => {
     expect(g.map((x) => x.title)).toEqual(['Bench', 'Power and reset', 'UART console', 'Sensor emulation', 'Other'])
   })
 })
+
+import { benchOutputs } from './BenchPanel'
+
+describe('benchOutputs', () => {
+  it('collects the console in order and the captures', () => {
+    const items = itemsFromHistory(
+      [
+        { role: 'assistant', content: '', tool_calls: [
+          { id: 'a', name: 'uart_write', arguments: '{"text":"info"}' },
+          { id: 'b', name: 'uart_read', arguments: '{}' },
+          { id: 'c', name: 'capture_adc', arguments: '{}' },
+          { id: 'd', name: 'status', arguments: '{}' },
+        ] },
+        { role: 'tool', content: '{"written": 5}', tool_call_id: 'a' },
+        { role: 'tool', content: '{"text": "INFO fw=process-node\\n> "}', tool_call_id: 'b' },
+        { role: 'tool', content: '{}', tool_call_id: 'c' },
+        { role: 'tool', content: '{}', tool_call_id: 'd' },
+      ],
+      { c: { mean: 1.5, min: 1, max: 2, peak_to_peak: 1, samples: 10, sample_rate_hz: 1000, duration: 0.01, envelope_step: 0.001, envelope_min: [1], envelope_max: [2] } },
+    )
+    const o = benchOutputs(items)
+    expect(o.console.map((e) => [e.dir, e.text])).toEqual([['in', 'info'], ['out', 'INFO fw=process-node\n> ']])
+    expect(o.captures).toHaveLength(1)
+    expect(o.captures[0].title).toBe('ADC · 1.50 V · 1.00 V p-p')
+  })
+})
