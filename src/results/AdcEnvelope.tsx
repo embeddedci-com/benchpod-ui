@@ -35,6 +35,11 @@ export function fmtSi(v: number, unit: string): string {
   return `${(v * 1e9).toPrecision(3)} n${unit}`
 }
 
+/** Whether the capture holds more than the input's noise: a frequency of noise means nothing. */
+export function hasSignal(c: AdcCapture): boolean {
+  return c.peak_to_peak > ((c.unit ?? 'V') === 'A' ? 0.0002 : 0.02)
+}
+
 /** An ADC capture as a min/max envelope over time, with its summary numbers. */
 export function AdcEnvelope({ capture, height = 160 }: { capture: AdcCapture; height?: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -71,9 +76,13 @@ export function AdcEnvelope({ capture, height = 160 }: { capture: AdcCapture; he
     if (n === 0) return
     let lo = Math.min(...mins.slice(0, n))
     let hi = Math.max(...maxs.slice(0, n))
-    if (hi - lo < 1e-6) {
-      hi += 0.05
-      lo -= 0.05
+    // A floor on the vertical span, so millivolts of noise on a quiet input stay a flat line
+    // instead of filling the chart like a signal.
+    const minSpan = unit === 'A' ? 0.001 : 0.2
+    if (hi - lo < minSpan) {
+      const mid = (hi + lo) / 2
+      lo = mid - minSpan / 2
+      hi = mid + minSpan / 2
     }
     const span = hi - lo
     lo -= span * 0.08
@@ -123,7 +132,7 @@ export function AdcEnvelope({ capture, height = 160 }: { capture: AdcCapture; he
         <Stat label="min" value={fmtSi(capture.min, unit)} />
         <Stat label="max" value={fmtSi(capture.max, unit)} />
         <Stat label="p-p" value={fmtSi(capture.peak_to_peak, unit)} />
-        {capture.dominant_frequency_hz ? <Stat label="f" value={fmtSi(capture.dominant_frequency_hz, 'Hz')} /> : null}
+        {hasSignal(capture) && capture.dominant_frequency_hz ? <Stat label="f" value={fmtSi(capture.dominant_frequency_hz, 'Hz')} /> : null}
         <Stat label="rate" value={fmtSi(capture.sample_rate_hz, 'S/s')} />
         {capture.trigger ? <Stat label="trigger" value={capture.trigger} /> : null}
       </Group>

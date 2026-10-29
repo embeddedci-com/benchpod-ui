@@ -33,8 +33,9 @@ export type UseChatOptions = {
 let seq = 0
 const nextId = () => `i${++seq}`
 
-/** The transcript of a saved conversation. Structured results are not kept in history. */
-export function itemsFromHistory(messages: Message[]): ChatItem[] {
+/** The transcript of a saved conversation. `results` (by tool call id) are the structured
+ *  results the host kept, so captures are drawn again; without them a result is its text. */
+export function itemsFromHistory(messages: Message[], results?: Record<string, unknown>): ChatItem[] {
   const items: ChatItem[] = []
   const tools = new Map<string, Extract<ChatItem, { kind: 'tool' }>>()
   for (const m of messages) {
@@ -48,7 +49,7 @@ export function itemsFromHistory(messages: Message[]): ChatItem[] {
       }
     } else if (m.role === 'tool' && m.tool_call_id) {
       const t = tools.get(m.tool_call_id)
-      if (t) t.result = { text: m.content, is_error: /^(not run|refused|tool error)/.test(m.content) }
+      if (t) t.result = { text: m.content, structured: results?.[m.tool_call_id], is_error: /^(not run|refused|tool error)/.test(m.content) }
     }
   }
   return items
@@ -119,8 +120,8 @@ export function useChat(opts: UseChatOptions) {
   const reload = useCallback(async () => {
     const r = await fetch(`${base}/history`, { headers: headers(false), credentials: 'same-origin' })
     if (!r.ok) return
-    const body = (await r.json()) as { messages: Message[]; running: boolean }
-    setItems(itemsFromHistory(body.messages ?? []))
+    const body = (await r.json()) as { messages: Message[]; running: boolean; results?: Record<string, unknown> }
+    setItems(itemsFromHistory(body.messages ?? [], body.results))
     setRunning(body.running)
   }, [base, headers])
 

@@ -40,6 +40,17 @@ describe('itemsFromHistory', () => {
     expect(items.map((i) => i.kind)).toEqual(['user', 'tool', 'assistant'])
     expect(items[1]).toMatchObject({ result: { is_error: true } })
   })
+
+  it('draws kept structured results again', () => {
+    const items = itemsFromHistory(
+      [
+        { role: 'assistant', content: '', tool_calls: [{ id: 'c9', name: 'capture_adc', arguments: '{}' }] },
+        { role: 'tool', content: '{"mean": 1.5}', tool_call_id: 'c9' },
+      ],
+      { c9: { mean: 1.5, envelope_min: [1], envelope_max: [2], envelope_step: 0.001 } },
+    )
+    expect(items[0]).toMatchObject({ result: { structured: { mean: 1.5 } } })
+  })
 })
 
 describe('readEvents', () => {

@@ -9,7 +9,7 @@ import type { ToolCall } from './protocol'
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
 /** Tools whose result is worth seeing without a click: logs and captures. */
-const OPEN_BY_DEFAULT = /^(uart_read|capture_|power_cycle_and_capture|decode_la|adc_read|measure_power|i2c_sensor_capture)/
+const OPEN_BY_DEFAULT = /^(uart_read|capture_|power_cycle_and_capture|decode_la|adc_read|measure_power|i2c_sensor_capture|dac_output|generate|current_out)/
 
 /** "name(arg: value, …)" with long values cut, the way a terminal agent prints a call. */
 export function callSummary(call: ToolCall, max = 90): string {
