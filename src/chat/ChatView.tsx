@@ -126,13 +126,17 @@ export function ChatView(p: ChatViewProps) {
   // new item too (a capture drawing, a tool result opening), so a resize observer follows it,
   // and only the reader's own scrolling (wheel, touch, keys) can stop the following.
   const stick = useRef(true)
+  // An empty conversation opens at the top (the intro, the examples, the tools); following
+  // starts with the first message.
+  const hasItems = useRef(false)
+  hasItems.current = p.items.length > 0
 
   useEffect(() => {
     const v = viewport.current
     const c = content.current
     if (!v || !c) return
     const toEnd = () => {
-      if (stick.current) v.scrollTop = v.scrollHeight
+      if (stick.current && hasItems.current) v.scrollTop = v.scrollHeight
     }
     const ro = new ResizeObserver(toEnd)
     ro.observe(c)
@@ -154,7 +158,9 @@ export function ChatView(p: ChatViewProps) {
 
   useEffect(() => {
     const v = viewport.current
-    if (v && stick.current) v.scrollTop = v.scrollHeight
+    if (!v) return
+    if (p.items.length === 0) v.scrollTop = 0
+    else if (stick.current) v.scrollTop = v.scrollHeight
   }, [p.items])
 
   const submit = () => {
