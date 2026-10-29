@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ActionIcon, Alert, Box, Button, Group, Loader, ScrollArea, Stack, Text, Textarea, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Alert, Box, Button, Group, Loader, Modal, ScrollArea, Stack, Text, Textarea, UnstyledButton } from '@mantine/core'
 import { Markdown } from './Markdown'
 import { ResultView } from '../results/ResultView'
+import { ToolsList, type ToolInfo } from './ToolsList'
 import type { ChatItem } from './useChat'
 import type { ToolCall } from './protocol'
 
@@ -110,11 +111,15 @@ export type ChatViewProps = {
   disabledReason?: string
   /** Height of the whole view; defaults to filling its parent. */
   height?: number | string
+  /** The tools the agent may use (useTools): listed while the conversation is empty, and
+   *  behind an "N tools" button next to the composer. */
+  tools?: ToolInfo[] | null
 }
 
 /** The agent conversation: transcript, tool calls with their results, and the composer. */
 export function ChatView(p: ChatViewProps) {
   const [draft, setDraft] = useState('')
+  const [toolsOpen, setToolsOpen] = useState(false)
   const viewport = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   // Follow the conversation to its end unless the reader scrolled up. Content grows without a
@@ -189,6 +194,14 @@ export function ChatView(p: ChatViewProps) {
                   ))}
                 </Stack>
               ) : null}
+              {p.tools?.length ? (
+                <Box p="sm" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 8 }}>
+                  <Text size="sm" fw={600} mb="xs">
+                    The agent can use {p.tools.length} BenchPod tools (the BenchPod MCP server's):
+                  </Text>
+                  <ToolsList tools={p.tools} />
+                </Box>
+              ) : null}
             </Stack>
           ) : null}
           {p.items.map((it) => {
@@ -257,9 +270,21 @@ export function ChatView(p: ChatViewProps) {
               </ActionIcon>
             )}
           </Group>
-          {p.footer ? <Box mt={6}>{p.footer}</Box> : null}
+          {p.footer || p.tools?.length ? (
+            <Group mt={6} gap="xs" align="flex-start" wrap="nowrap">
+              {p.tools?.length ? (
+                <Button size="compact-xs" variant="subtle" onClick={() => setToolsOpen(true)} style={{ flex: 'none' }}>
+                  {p.tools.length} tools
+                </Button>
+              ) : null}
+              <Box style={{ flex: 1, minWidth: 0 }}>{p.footer}</Box>
+            </Group>
+          ) : null}
         </Box>
       </Box>
+      <Modal opened={toolsOpen} onClose={() => setToolsOpen(false)} title={`The agent's ${p.tools?.length ?? 0} BenchPod tools`} size="xl">
+        {p.tools ? <ToolsList tools={p.tools} /> : null}
+      </Modal>
     </Stack>
   )
 }

@@ -69,3 +69,18 @@ describe('callSummary', () => {
     expect(callSummary(call)).toBe('uart_read(until_regex: "ready>")')
   })
 })
+
+import { groupTools } from './ToolsList'
+
+describe('groupTools', () => {
+  it('groups by what the tool works on, unknown ones last', () => {
+    const g = groupTools([
+      { name: 'uart_read', summary: '' },
+      { name: 'status', summary: '' },
+      { name: 'enable_i2c_sensor', summary: '' },
+      { name: 'power_on', summary: '' },
+      { name: 'brand_new_tool', summary: '' },
+    ])
+    expect(g.map((x) => x.title)).toEqual(['Bench', 'Power and reset', 'UART console', 'Sensor emulation', 'Other'])
+  })
+})
