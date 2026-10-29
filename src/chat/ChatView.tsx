@@ -116,11 +116,40 @@ export type ChatViewProps = {
 export function ChatView(p: ChatViewProps) {
   const [draft, setDraft] = useState('')
   const viewport = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  // Follow the conversation to its end unless the reader scrolled up. Content grows without a
+  // new item too (a capture drawing, a tool result opening), so a resize observer follows it,
+  // and only the reader's own scrolling (wheel, touch, keys) can stop the following.
   const stick = useRef(true)
 
   useEffect(() => {
     const v = viewport.current
-    if (v && stick.current) v.scrollTo({ top: v.scrollHeight })
+    const c = content.current
+    if (!v || !c) return
+    const toEnd = () => {
+      if (stick.current) v.scrollTop = v.scrollHeight
+    }
+    const ro = new ResizeObserver(toEnd)
+    ro.observe(c)
+    const userScrolled = () => {
+      requestAnimationFrame(() => {
+        stick.current = v.scrollHeight - v.scrollTop - v.clientHeight < 40
+      })
+    }
+    v.addEventListener('wheel', userScrolled, { passive: true })
+    v.addEventListener('touchmove', userScrolled, { passive: true })
+    v.addEventListener('keydown', userScrolled)
+    return () => {
+      ro.disconnect()
+      v.removeEventListener('wheel', userScrolled)
+      v.removeEventListener('touchmove', userScrolled)
+      v.removeEventListener('keydown', userScrolled)
+    }
+  }, [])
+
+  useEffect(() => {
+    const v = viewport.current
+    if (v && stick.current) v.scrollTop = v.scrollHeight
   }, [p.items])
 
   const submit = () => {
@@ -140,12 +169,8 @@ export function ChatView(p: ChatViewProps) {
       <ScrollArea
         viewportRef={viewport}
         style={{ flex: 1, minHeight: 0 }}
-        onScrollPositionChange={({ y }) => {
-          const v = viewport.current
-          if (v) stick.current = v.scrollHeight - y - v.clientHeight < 40
-        }}
       >
-        <Stack gap="sm" p="md" maw={920} mx="auto">
+        <Stack ref={content} gap="sm" p="md" maw={920} mx="auto">
           {p.items.length === 0 ? (
             <Stack gap="md" py="lg">
               {p.intro}
