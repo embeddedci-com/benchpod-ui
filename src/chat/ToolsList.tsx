@@ -1,23 +1,24 @@
 import { useEffect, useState } from 'react'
-import { Box, SimpleGrid, Stack, Text } from '@mantine/core'
+import { Anchor, Box, SimpleGrid, Stack, Text } from '@mantine/core'
 
 /** A tool the agent may use (GET {base}/tools): its MCP name and the first sentence of its description. */
 export type ToolInfo = { name: string; summary: string }
 
-const GROUPS: { title: string; match: (n: string) => boolean }[] = [
-  { title: 'Bench', match: (n) => ['status', 'wiring', 'set_wiring', 'calibration', 'cloud_list_devices', 'connect', 'disconnect', 'lan_tls', 'usb_network', 'command', 'fpga_image'].includes(n) },
-  { title: 'Power and reset', match: (n) => /^(power_|measure_power|reset_target)/.test(n) },
-  { title: 'Firmware', match: (n) => /^(flash|spi_)/.test(n) },
-  { title: 'UART console', match: (n) => /^(uart_|capture_uart)/.test(n) },
-  { title: 'Sensor emulation', match: (n) => /(i2c_sensor|_gps|gps_|set_pull|pull_status)/.test(n) },
-  { title: 'Logic and GPIO', match: (n) => /^(capture_la|decode_la|la_|gpio_|capture_correlated)/.test(n) },
-  { title: 'Analog', match: (n) => /^(dac_|adc_|capture_adc|generate|replay|list_waveforms|current_out|control_loop|loop_|analog_path|calibrate|save_capture)/.test(n) },
-  { title: 'CAN', match: (n) => /^can_/.test(n) },
+// Each group with a request that uses it: people ask in plain words, the names are for reference.
+const GROUPS: { title: string; ask: string; match: (n: string) => boolean }[] = [
+  { title: 'Bench', ask: 'What is wired to this pod?', match: (n) => ['status', 'wiring', 'set_wiring', 'calibration', 'cloud_list_devices', 'connect', 'disconnect', 'lan_tls', 'usb_network', 'command', 'fpga_image'].includes(n) },
+  { title: 'Power and reset', ask: 'Power-cycle the board and show me its boot log.', match: (n) => /^(power_|measure_power|reset_target)/.test(n) },
+  { title: 'Firmware', ask: 'Flash build/app.elf and check it boots.', match: (n) => /^(flash|spi_)/.test(n) },
+  { title: 'UART console', ask: 'Run the info command on the console.', match: (n) => /^(uart_|capture_uart)/.test(n) },
+  { title: 'Sensor emulation', ask: 'Emulate a BMP280 at 30 °C.', match: (n) => /(i2c_sensor|_gps|gps_|set_pull|pull_status)/.test(n) },
+  { title: 'Logic and GPIO', ask: 'Capture the I2C lines and decode them.', match: (n) => /^(capture_la|decode_la|la_|gpio_|capture_correlated)/.test(n) },
+  { title: 'Analog', ask: 'Drive 1 V on the DAC and capture the ADC.', match: (n) => /^(dac_|adc_|capture_adc|generate|replay|list_waveforms|current_out|control_loop|loop_|analog_path|calibrate|save_capture)/.test(n) },
+  { title: 'CAN', ask: 'Send a CAN frame and show the reply.', match: (n) => /^can_/.test(n) },
 ]
 
 /** Tools grouped by what they work on, in the order of GROUPS; unknown ones under "Other". */
-export function groupTools(tools: ToolInfo[]): { title: string; tools: ToolInfo[] }[] {
-  const out = GROUPS.map((g) => ({ title: g.title, tools: [] as ToolInfo[] }))
+export function groupTools(tools: ToolInfo[]): { title: string; ask?: string; tools: ToolInfo[] }[] {
+  const out: { title: string; ask?: string; tools: ToolInfo[] }[] = GROUPS.map((g) => ({ title: g.title, ask: g.ask, tools: [] as ToolInfo[] }))
   const other: ToolInfo[] = []
   for (const t of tools) {
     const i = GROUPS.findIndex((g) => g.match(t.name))
@@ -46,29 +47,42 @@ export function useTools(base: string, headers?: () => Record<string, string>): 
   return tools
 }
 
-/** The agent's tools by group: name in monospace, what it does beside it. */
-export function ToolsList({ tools, columns = 2 }: { tools: ToolInfo[]; columns?: number }) {
+/** The agent's tools by group: a request to try, then each tool's name and what it does.
+ *  `referenceHref` links the full reference (parameters, units, defaults). */
+export function ToolsList({ tools, columns = 2, referenceHref }: { tools: ToolInfo[]; columns?: number; referenceHref?: string }) {
   return (
-    <SimpleGrid cols={{ base: 1, sm: columns }} spacing="md" verticalSpacing="md">
-      {groupTools(tools).map((g) => (
-        <Box key={g.title}>
-          <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb={4}>
-            {g.title}
-          </Text>
-          <Stack gap={4}>
-            {g.tools.map((t) => (
-              <Text key={t.name} size="xs" lh={1.35}>
-                <Text span ff="monospace" fw={600} size="xs">
-                  {t.name}
-                </Text>{' '}
-                <Text span c="dimmed" size="xs">
-                  {t.summary}
-                </Text>
+    <Stack gap="sm">
+      <SimpleGrid cols={{ base: 1, sm: columns }} spacing="md" verticalSpacing="md">
+        {groupTools(tools).map((g) => (
+          <Box key={g.title}>
+            <Text size="xs" fw={700} tt="uppercase" c="dimmed" mb={2}>
+              {g.title}
+            </Text>
+            {g.ask ? (
+              <Text size="xs" fs="italic" mb={4}>
+                Try: &ldquo;{g.ask}&rdquo;
               </Text>
-            ))}
-          </Stack>
-        </Box>
-      ))}
-    </SimpleGrid>
+            ) : null}
+            <Stack gap={4}>
+              {g.tools.map((t) => (
+                <Text key={t.name} size="xs" lh={1.35}>
+                  <Text span ff="monospace" fw={600} size="xs">
+                    {t.name}
+                  </Text>{' '}
+                  <Text span c="dimmed" size="xs">
+                    {t.summary}
+                  </Text>
+                </Text>
+              ))}
+            </Stack>
+          </Box>
+        ))}
+      </SimpleGrid>
+      {referenceHref ? (
+        <Anchor href={referenceHref} target="_blank" rel="noopener" size="xs">
+          Full reference: each tool&apos;s parameters, units and defaults →
+        </Anchor>
+      ) : null}
+    </Stack>
   )
 }

@@ -114,6 +114,10 @@ export type ChatViewProps = {
   /** The tools the agent may use (useTools): listed while the conversation is empty, and
    *  behind an "N tools" button next to the composer. */
   tools?: ToolInfo[] | null
+  /** The full tool reference (parameters, units, defaults), linked under the tools list. */
+  toolsReferenceHref?: string
+  /** A "Help" link beside the message box: how to use the agent. */
+  helpHref?: string
 }
 
 /** The agent conversation: transcript, tool calls with their results, and the composer. */
@@ -205,7 +209,7 @@ export function ChatView(p: ChatViewProps) {
                   <Text size="sm" fw={600} mb="xs">
                     The agent can use {p.tools.length} BenchPod tools (the BenchPod MCP server's):
                   </Text>
-                  <ToolsList tools={p.tools} />
+                  <ToolsList tools={p.tools} referenceHref={p.toolsReferenceHref} />
                 </Box>
               ) : null}
             </Stack>
@@ -276,11 +280,16 @@ export function ChatView(p: ChatViewProps) {
               </ActionIcon>
             )}
           </Group>
-          {p.footer || p.tools?.length ? (
+          {p.footer || p.tools?.length || p.helpHref ? (
             <Group mt={6} gap="xs" align="flex-start" wrap="nowrap">
               {p.tools?.length ? (
                 <Button size="compact-xs" variant="subtle" onClick={() => setToolsOpen(true)} style={{ flex: 'none' }}>
                   {p.tools.length} tools
+                </Button>
+              ) : null}
+              {p.helpHref ? (
+                <Button size="compact-xs" variant="subtle" component="a" href={p.helpHref} target="_blank" rel="noopener" style={{ flex: 'none' }}>
+                  Help
                 </Button>
               ) : null}
               <Box style={{ flex: 1, minWidth: 0 }}>{p.footer}</Box>
@@ -289,7 +298,7 @@ export function ChatView(p: ChatViewProps) {
         </Box>
       </Box>
       <Modal opened={toolsOpen} onClose={() => setToolsOpen(false)} title={`The agent's ${p.tools?.length ?? 0} BenchPod tools`} size="xl">
-        {p.tools ? <ToolsList tools={p.tools} /> : null}
+        {p.tools ? <ToolsList tools={p.tools} referenceHref={p.toolsReferenceHref} /> : null}
       </Modal>
     </Stack>
   )
