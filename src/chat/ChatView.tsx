@@ -39,8 +39,8 @@ function ToolRow({
   item: Extract<ChatItem, { kind: 'tool' }>
   onConfirm: (id: string, ok: boolean) => void
   /** The panel shows this result: the transcript keeps a summary line that opens it. */
-  inPanel?: { kind: 'console' | 'captures'; summary: string }
-  onOpenPanel?: (kind: 'console' | 'captures', id: string) => void
+  inPanel?: { kind: 'console' | 'captures' | 'power'; summary: string }
+  onOpenPanel?: (kind: 'console' | 'captures' | 'power', id: string) => void
 }) {
   const done = !!item.result
   const err = item.result?.is_error
@@ -144,7 +144,7 @@ export type ChatViewProps = {
   panel?: boolean
   /** More panel tabs from the host (the demo's "About"). */
   panelTabs?: PanelTab[]
-  /** Open the panel on this tab before there is any output (default: closed until output). */
+  /** The panel's tab before there is any output (default: the console). The panel starts open on a wide screen. */
   panelInitialTab?: string
 }
 
@@ -171,42 +171,45 @@ export function ChatView(p: ChatViewProps) {
   // Read synchronously: a phone must never see the panel open itself on the first render.
   const wide = useMediaQuery('(min-width: 62em)', false, { getInitialValueInEffect: false })
   const outputs = useMemo(() => benchOutputs(p.items), [p.items])
-  const [panelOpen, setPanelOpen] = useState(!!p.panelInitialTab && wide)
+  const [panelOpen, setPanelOpen] = useState(wide)
   const [panelTab, setPanelTab] = useState(p.panelInitialTab ?? 'console')
   const [selected, setSelected] = useState<string | undefined>()
-  const seen = useRef({ console: 0, captures: 0 })
-  // The panel opens by itself on the first console output or capture, at that tab, and moves
-  // to the newest capture as they come; after that the reader decides.
+  const seen = useRef({ console: 0, captures: 0, power: 0 })
+  // The panel starts open beside the conversation (a phone opens its drawer by hand). It moves to
+  // the newest capture or power reading as they come, and to the console on its first output.
   useEffect(() => {
     if (!panelOn) return
     if (p.items.length === 0) {
       // A new conversation starts like a fresh visit.
-      seen.current = { console: 0, captures: 0 }
+      seen.current = { console: 0, captures: 0, power: 0 }
       setPanelTab(p.panelInitialTab ?? 'console')
-      setPanelOpen(!!p.panelInitialTab && wide)
+      setPanelOpen(wide)
       return
     }
     const c = outputs.console.length
     const k = outputs.captures.length
+    const w = outputs.power.length
     if (k > seen.current.captures) {
       setPanelTab('captures')
       setSelected(outputs.captures[k - 1].id)
-      if (seen.current.captures === 0 && seen.current.console === 0) setPanelOpen(wide)
+    } else if (w > seen.current.power) {
+      setPanelTab('power')
+      setSelected(outputs.power[w - 1].id)
     } else if (c > seen.current.console && seen.current.console === 0 && seen.current.captures === 0) {
       setPanelTab('console')
-      setPanelOpen(wide)
     }
-    seen.current = { console: c, captures: k }
+    seen.current = { console: c, captures: k, power: w }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outputs, panelOn, wide])
-  const openPanel = (kind: 'console' | 'captures', id: string) => {
+  const openPanel = (kind: 'console' | 'captures' | 'power', id: string) => {
     setPanelTab(kind)
-    if (kind === 'captures') setSelected(id)
+    if (kind !== 'console') setSelected(id)
     setPanelOpen(true)
   }
-  const inPanel = (id: string): { kind: 'console' | 'captures'; summary: string } | undefined => {
+  const inPanel = (id: string): { kind: 'console' | 'captures' | 'power'; summary: string } | undefined => {
     if (!panelOn) return undefined
     const kind = panelKind(outputs, id)
+    if (kind === 'power') return { kind, summary: outputs.power.find((c) => c.id === id)?.title ?? '' }
     if (kind === 'captures') return { kind, summary: (outputs.captures.find((c) => c.id === id) as CaptureEntry).title }
     if (kind === 'console') return { kind, summary: consoleSummary(outputs.console.find((c) => c.id === id) as ConsoleEntry) }
     return undefined
@@ -349,14 +352,16 @@ export function ChatView(p: ChatViewProps) {
           ) : null}
         </Stack>
       </ScrollArea>
-      <Box p="sm" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
+      <Box px="md" pb="sm" pt={4}>
         <Box maw={920} mx="auto">
           <Group gap="xs" align="flex-end" wrap="nowrap">
             <Textarea
               style={{ flex: 1 }}
               autosize
               autoFocus={p.autoFocus && wide}
-              minRows={1}
+              size="md"
+              radius="md"
+              minRows={2}
               maxRows={8}
               value={draft}
               placeholder={p.disabledReason ?? p.placeholder ?? 'Ask the agent to test or debug your board…'}
