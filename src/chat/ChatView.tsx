@@ -127,6 +127,8 @@ export type ChatViewProps = {
   /** Below the composer: which model, where the data goes, the usage. */
   footer?: ReactNode
   placeholder?: string
+  /** Put the cursor in the composer on arrival (wide screens: a phone would pop its keyboard). */
+  autoFocus?: boolean
   /** Set to block sending, with the reason shown in place of the composer hint. */
   disabledReason?: string
   /** Height of the whole view; defaults to filling its parent. */
@@ -353,6 +355,7 @@ export function ChatView(p: ChatViewProps) {
             <Textarea
               style={{ flex: 1 }}
               autosize
+              autoFocus={p.autoFocus && wide}
               minRows={1}
               maxRows={8}
               value={draft}
