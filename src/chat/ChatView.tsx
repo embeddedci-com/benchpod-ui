@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ActionIcon, Alert, Anchor, Box, Button, Drawer, Group, Loader, Modal, ScrollArea, Stack, Text, Textarea, Tooltip, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Alert, Anchor, Badge, Box, Button, CloseButton, Drawer, FileButton, Group, Loader, Modal, ScrollArea, Stack, Text, Textarea, Tooltip, UnstyledButton } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { Markdown } from './Markdown'
 import { ResultView } from '../results/ResultView'
@@ -144,6 +144,15 @@ export type ChatViewProps = {
   panel?: boolean
   /** More panel tabs from the host (the demo's "About"). */
   panelTabs?: PanelTab[]
+  /** Files attached to this conversation, shown above the message box. */
+  attachments?: { name: string; size: number }[]
+  /** Offers a paperclip beside the message box. */
+  onAttach?: (file: File) => void
+  onDetach?: (name: string) => void
+  /** Which files the paperclip offers, e.g. ".elf,.hex,.bin". */
+  attachAccept?: string
+  /** A file is on its way up. */
+  attaching?: boolean
   /** The panel's tab before there is any output (default: the console). The panel starts open on a wide screen. */
   panelInitialTab?: string
 }
@@ -354,6 +363,25 @@ export function ChatView(p: ChatViewProps) {
       </ScrollArea>
       <Box px="md" pb="sm" pt={4}>
         <Box maw={920} mx="auto">
+          {p.attachments?.length ? (
+            <Group gap={6} mb={6}>
+              {p.attachments.map((a) => (
+                <Badge
+                  key={a.name}
+                  variant="light"
+                  color="gray"
+                  tt="none"
+                  rightSection={
+                    p.onDetach ? (
+                      <CloseButton size={14} aria-label={`Remove ${a.name}`} onClick={() => p.onDetach?.(a.name)} />
+                    ) : undefined
+                  }
+                >
+                  {a.name}
+                </Badge>
+              ))}
+            </Group>
+          ) : null}
           <Group gap="xs" align="flex-end" wrap="nowrap">
             <Textarea
               style={{ flex: 1 }}
@@ -385,8 +413,24 @@ export function ChatView(p: ChatViewProps) {
               </ActionIcon>
             )}
           </Group>
-          {p.footer || p.tools?.length || p.helpHref ? (
+          {p.footer || p.tools?.length || p.helpHref || p.onAttach ? (
             <Group mt={6} gap={4} align="center" wrap="nowrap">
+              {p.onAttach ? (
+                <FileButton
+                  accept={p.attachAccept}
+                  onChange={(f) => {
+                    if (f) p.onAttach?.(f)
+                  }}
+                >
+                  {(props) => (
+                    <Tooltip label="Attach a firmware file">
+                      <ActionIcon {...props} variant="subtle" size="sm" loading={p.attaching} disabled={!!p.disabledReason} aria-label="Attach a file">
+                        <Icon d="M21 11.5l-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8" />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </FileButton>
+              ) : null}
               {p.tools?.length ? (
                 <Tooltip label={`The agent's ${p.tools.length} BenchPod tools`}>
                   <ActionIcon variant="subtle" size="sm" onClick={() => setToolsOpen(true)} aria-label="Tools">
