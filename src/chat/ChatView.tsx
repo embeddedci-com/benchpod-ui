@@ -178,7 +178,9 @@ export function ChatView(p: ChatViewProps) {
   const [toolsOpen, setToolsOpen] = useState(false)
   const panelOn = p.panel !== false
   // Read synchronously: a phone must never see the panel open itself on the first render.
-  const wide = useMediaQuery('(min-width: 62em)', false, { getInitialValueInEffect: false })
+  const wide = useMediaQuery('(min-width: 48em)', false, { getInitialValueInEffect: false })
+  // A narrow window on a computer still gets the cursor; a touch screen would pop up its keyboard.
+  const finePointer = useMediaQuery('(pointer: fine)', false, { getInitialValueInEffect: false })
   const outputs = useMemo(() => benchOutputs(p.items), [p.items])
   const [panelOpen, setPanelOpen] = useState(wide)
   const [panelTab, setPanelTab] = useState(p.panelInitialTab ?? 'console')
@@ -386,7 +388,7 @@ export function ChatView(p: ChatViewProps) {
             <Textarea
               style={{ flex: 1 }}
               autosize
-              autoFocus={p.autoFocus && wide}
+              autoFocus={p.autoFocus && finePointer}
               size="md"
               radius="md"
               minRows={2}
