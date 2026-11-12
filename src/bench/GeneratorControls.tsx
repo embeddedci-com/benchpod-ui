@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { ActionIcon, Alert, Button, Divider, FileButton, Group, NumberInput, SegmentedControl, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import { fmtSi } from '../results/AdcEnvelope'
 import { benchError, type BenchCall, type BenchResult } from './benchCall'
+import { FaultControls, LoopControls, SegmentControls } from './GeneratorExtras'
+import type { FaultSpec } from './generatorMath'
 
-// The DAC by hand: a DC level, a sine, square or sawtooth, a waveform from the library, and Stop.
+// The DAC by hand: a DC level, a sine, square or sawtooth, a waveform from the library, a
+// segmented signal, a fault injected into a library waveform, the control loop, and Stop.
 // The web app's Generator tab for a host's bench panel. The library is the host's (the desktop
 // app keeps it in its data folder); the outputs go through the BenchPod MCP tools and so through
 // the host's confirmations and limits.
@@ -27,8 +30,9 @@ export type WaveformLibrary = {
   fromCapture(name: string): Promise<WaveformMeta>
   rename(id: string, name: string): Promise<WaveformMeta>
   remove(id: string): Promise<void>
-  /** Loop it out of the DAC until Stop. */
-  play(id: string, opts: { dac_path: string; mapping: 'faithful' | 'fit' }): Promise<BenchResult>
+  /** Loop it out of the DAC until Stop, with fault (the replay tool's) spliced in when given. A
+   * stuck fault comes without a level: the host holds the sample just before its window. */
+  play(id: string, opts: { dac_path: string; mapping: 'faithful' | 'fit'; fault?: FaultSpec }): Promise<BenchResult>
 }
 
 const OUTPUTS = [
@@ -36,6 +40,12 @@ const OUTPUTS = [
   { value: '5v', label: '5 V output (0 to 5 V)' },
   { value: '12v', label: '12 V output (±12 V)' },
   { value: 'current_out', label: '4-20 mA output (J9)' },
+]
+const MODES = [
+  { value: 'output', label: 'Output' },
+  { value: 'segments', label: 'Segments' },
+  { value: 'fault', label: 'Fault' },
+  { value: 'loop', label: 'Control loop' },
 ]
 const SHAPES = [
   { value: 'sine', label: 'Sine' },
@@ -73,6 +83,7 @@ export function GeneratorControls({ call, library }: { call: BenchCall; library?
   const [amp, setAmp] = useState<number | ''>(1)
   const [offset, setOffset] = useState<number | ''>(1.65)
   const [duration, setDuration] = useState<number | ''>(0)
+  const [mode, setMode] = useState('output')
   const current = output === 'current_out'
   const unit = current ? 'mA' : 'V'
 
@@ -131,6 +142,14 @@ export function GeneratorControls({ call, library }: { call: BenchCall; library?
           : 'Pick the output the board pin tolerates: 5 V and 12 V can damage a 3.3 V pin.'}
       </Text>
 
+      <SegmentedControl size="xs" data={MODES.filter((m) => library || m.value !== 'fault')} value={mode} onChange={setMode} />
+
+      {mode === 'segments' ? <SegmentControls call={call} library={library} output={output} run={run} busy={busy} setError={setError} /> : null}
+      {mode === 'fault' && library ? <FaultControls library={library} output={output} run={run} busy={busy} setError={setError} /> : null}
+      {mode === 'loop' ? <LoopControls call={call} output={output} run={run} busy={busy} /> : null}
+
+      {mode === 'output' ? (
+        <>
       <Divider label="Level" labelPosition="left" />
       <Group gap="xs" align="flex-end">
         <NumberInput size="xs" w={120} label={current ? 'Current (mA)' : 'Voltage (V)'} value={dc} onChange={(v) => setDc(typeof v === 'number' ? v : '')} step={0.1} decimalScale={4} />
@@ -152,6 +171,8 @@ export function GeneratorControls({ call, library }: { call: BenchCall; library?
       </Group>
 
       {library ? <Library library={library} output={output} run={run} busy={busy} setError={setError} /> : null}
+        </>
+      ) : null}
 
       {error ? (
         <Alert color="red" variant="light" p="xs" withCloseButton onClose={() => setError(undefined)}>
