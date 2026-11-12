@@ -12,3 +12,18 @@ export { BenchPanel, benchOutputs, type PanelTab, type PanelControls, type Conso
 export { useBenchCall, benchData, benchError, type BenchCall, type BenchResult, type BenchCallOptions } from './bench/benchCall'
 export { PowerControls, type PowerStatus } from './bench/PowerControls'
 export { ConsoleTerminal, type ConsoleLogEntry } from './bench/ConsoleTerminal'
+export { CaptureCanvas, useCanvasColors, type LaEdge, type LaneAnnotation, type DacTrack, type CanvasColors } from './capture/CaptureCanvas'
+export {
+  DecodeTable,
+  I2cTable,
+  UartTable,
+  SpiTable,
+  DECODE_ACCENT,
+  decodeAnnotations,
+  type DecodeResult,
+  type DecodeTransaction,
+  type DecodeSegment,
+  type UartFrame,
+  type SpiFrame,
+} from './capture/DecodeTables'
+export { CaptureView, type FetchCapture, type LaCaptureData, type AdcCaptureData, type DecodeData } from './capture/CaptureView'

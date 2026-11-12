@@ -23,12 +23,18 @@ React, React DOM and Mantine are peer dependencies: the host must dedupe them (V
 The chat speaks the protocol of the `chat` Go package in benchpod-desktop
 (`src/chat/protocol.ts` describes it).
 
-The bench controls (`src/bench/`: power, a console terminal, and more to come) drive the pod by hand beside the chat.
+The bench controls (`src/bench/`: power, a console terminal; `src/capture/`: the capture view, and more to come) drive the pod by hand beside the chat.
 They take a `BenchCall`: `useBenchCall(base)` posts to the host's tool endpoint, which runs the
 BenchPod MCP tool under the same policy as the agent and answers `confirm` for a call that needs
 the user's yes (`src/bench/benchCall.tsx` describes the protocol). Pass them to `ChatView` as
 `panelControls`. The console terminal also reads the host's console log, which holds the agent's
 UART traffic as well (`src/bench/ConsoleTerminal.tsx`).
+
+`src/capture/` is the EmbeddedCI web app's capture surface, moved here so the web app and the
+desktop app draw the same thing: `CaptureCanvas` (ADC, LA and DAC lanes on one time axis, drag to
+zoom, decode chips), the decode tables, and `CaptureView`, which runs captures and decodes by hand
+and draws the last capture from the host's copy of the BenchPod MCP server's capture resources
+(`benchpod://capture/la`, `/adc`, `/decode`).
 
 ## Development
 
