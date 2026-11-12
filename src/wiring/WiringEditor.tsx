@@ -149,7 +149,9 @@ export function WiringEditor({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [saved, setSaved] = useState(false)
-  useEffect(() => setDraft(profile), [profile])
+  useEffect(() => {
+    setDraft(profile)
+  }, [profile])
 
   const w = useMemo(() => effectiveWiring(draft), [draft])
   const issues = useMemo(() => validateWiring(draft), [draft])

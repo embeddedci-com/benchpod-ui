@@ -62,3 +62,14 @@ describe('parseWaveformCsv', () => {
     expect(r.rateHz).toBeCloseTo(1000)
   })
 })
+
+describe('newerVersion', () => {
+  it('compares dotted versions numerically', async () => {
+    const { newerVersion } = await import('./PodUpdate')
+    expect(newerVersion('3.10.2', '3.10.1')).toBe(true)
+    expect(newerVersion('3.10.1', '3.10.1')).toBe(false)
+    expect(newerVersion('3.9.9', '3.10.0')).toBe(false)
+    expect(newerVersion('v3.11.0', '3.10.12')).toBe(true)
+    expect(newerVersion(undefined, '3.10.1')).toBe(false)
+  })
+})
