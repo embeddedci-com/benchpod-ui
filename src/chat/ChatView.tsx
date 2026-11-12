@@ -4,7 +4,7 @@ import { useMediaQuery } from '@mantine/hooks'
 import { Markdown } from './Markdown'
 import { ResultView } from '../results/ResultView'
 import { ToolsList, groupTools, type ToolInfo } from './ToolsList'
-import { BenchPanel, benchOutputs, panelKind, type CaptureEntry, type ConsoleEntry, type PanelTab } from './BenchPanel'
+import { BenchPanel, benchOutputs, panelKind, type CaptureEntry, type ConsoleEntry, type PanelControls, type PanelTab } from './BenchPanel'
 import type { ChatItem } from './useChat'
 import type { ToolCall } from './protocol'
 
@@ -144,6 +144,8 @@ export type ChatViewProps = {
   panel?: boolean
   /** More panel tabs from the host (the demo's "About"). */
   panelTabs?: PanelTab[]
+  /** The host's manual bench controls, at the top of the panel tabs. */
+  panelControls?: PanelControls
   /** Files attached to this conversation, shown above the message box. */
   attachments?: { name: string; size: number }[]
   /** Offers a paperclip beside the message box. */
@@ -287,6 +289,7 @@ export function ChatView(p: ChatViewProps) {
       selected={selected}
       onSelect={setSelected}
       extraTabs={p.panelTabs}
+      controls={p.panelControls}
     />
   )
 
