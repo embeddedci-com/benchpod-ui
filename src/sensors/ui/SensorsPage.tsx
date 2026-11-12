@@ -40,7 +40,7 @@ export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, 
   const [mineError, setMineError] = useState<string | null>(null)
   const [message, setMessage] = useState<{ color: string; text: string } | null>(null)
   const runnable = !!pod && podOnline && capable === true
-  const block = !pod ? 'No pod' : !podOnline ? 'The pod is offline' : capable === false ? 'Needs newer pod firmware' : capable === null ? 'Checking the pod' : null
+  const block = !pod ? 'No pod' : !podOnline ? 'Pod is offline' : capable === false ? 'Needs newer pod firmware' : capable === null ? 'Checking the pod' : null
   const { status, refresh } = usePodStatus(pod, runnable)
 
   const reload = useCallback(async () => {
