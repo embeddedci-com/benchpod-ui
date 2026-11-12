@@ -11,3 +11,4 @@ export { ToolsList, useTools, groupTools, type ToolInfo } from './chat/ToolsList
 export { BenchPanel, benchOutputs, type PanelTab, type PanelControls, type ConsoleEntry, type CaptureEntry } from './chat/BenchPanel'
 export { useBenchCall, benchData, benchError, type BenchCall, type BenchResult, type BenchCallOptions } from './bench/benchCall'
 export { PowerControls, type PowerStatus } from './bench/PowerControls'
+export { ConsoleTerminal, type ConsoleLogEntry } from './bench/ConsoleTerminal'

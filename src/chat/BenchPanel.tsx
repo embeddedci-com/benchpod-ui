@@ -139,9 +139,10 @@ export function panelKind(entry: BenchOutputs, itemId: string): 'console' | 'cap
 
 export type PanelTab = { value: string; label: string; content: ReactNode }
 
-/** A host's manual controls at the top of a panel tab (power switches, a console input, capture
- * settings), above what the agent produced there. */
-export type PanelControls = Partial<Record<'captures' | 'power', ReactNode>>
+/** A host's manual controls at the top of a panel tab (power switches, capture settings), above
+ * what the agent produced there. `console` replaces the Console tab: a host terminal that shows
+ * the agent's console traffic too. */
+export type PanelControls = Partial<Record<'console' | 'captures' | 'power', ReactNode>>
 
 export function BenchPanel({
   outputs,
@@ -183,6 +184,7 @@ export function BenchPanel({
       </Tabs.List>
       <Box style={{ flex: 1, minHeight: 0 }}>
         <Tabs.Panel value="console" h="100%">
+          {controls.console ? controls.console : (
           <ScrollArea h="100%">
             <Box p="sm">
               {outputs.console.length === 0 ? (
@@ -198,6 +200,7 @@ export function BenchPanel({
               <div ref={consoleEnd} />
             </Box>
           </ScrollArea>
+          )}
         </Tabs.Panel>
         <Tabs.Panel value="captures" h="100%">
           <ScrollArea h="100%">
