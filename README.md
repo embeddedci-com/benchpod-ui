@@ -39,6 +39,26 @@ and draws the last capture from the host's copy of the BenchPod MCP server's cap
 `src/wiring/model.ts` is the web app's wiring profile model (schema v1: keys, defaults, checks,
 the LA channel map), and `WiringEditor` edits a profile object and hands it to the host to apply.
 
+## Sensors
+
+`src/sensors` is the Sensors page for user-defined sensors (the format is in
+[benchpod-sensors](https://github.com/embeddedci-com/benchpod-sensors), `docs/format.md`): the
+library, the user's sensors and stimuli, a YAML editor checked as you type, a preview of what the
+DUT reads, the run panel and the stimulus editor. A host gives it two things:
+
+- a `SensorStore` (definitions, stimuli, the library and its version): the website implements it
+  over its HTTP API, the desktop app over its local API;
+- a `SensorPod` (define, start, set, stimulus, fault, stop, status, regs): `commandSensorPod`
+  builds one over any function that sends one pod command, and holds every command name.
+
+`fakePod` and `MemorySensorStore` stand in for both in tests and while working on a host.
+
+The page checks and previews definitions with the pod's own engine compiled to WebAssembly,
+vendored in `src/sensors/engine` with the sha256 of each file in `SHA256SUMS`. Refresh it from a
+benchpod-firmware checkout with `scripts/update-sensor-engine.sh [path]` (the website's server
+vendors the same `.wasm`: keep both on one firmware commit). Hosts load it as an asset
+(`new URL(..., import.meta.url)`), or call `setEngineSource` first to serve it from elsewhere.
+
 ## Development
 
 ```bash
