@@ -139,6 +139,10 @@ export function panelKind(entry: BenchOutputs, itemId: string): 'console' | 'cap
 
 export type PanelTab = { value: string; label: string; content: ReactNode }
 
+/** A host's manual controls at the top of a panel tab (power switches, a console input, capture
+ * settings), above what the agent produced there. */
+export type PanelControls = Partial<Record<'captures' | 'power', ReactNode>>
+
 export function BenchPanel({
   outputs,
   tab,
@@ -146,6 +150,7 @@ export function BenchPanel({
   selected,
   onSelect,
   extraTabs = [],
+  controls = {},
 }: {
   outputs: BenchOutputs
   tab: string
@@ -153,6 +158,7 @@ export function BenchPanel({
   selected?: string
   onSelect: (id: string) => void
   extraTabs?: PanelTab[]
+  controls?: PanelControls
 }) {
   const consoleEnd = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -195,6 +201,7 @@ export function BenchPanel({
         </Tabs.Panel>
         <Tabs.Panel value="captures" h="100%">
           <ScrollArea h="100%">
+            {controls.captures}
             <Stack p="sm" gap="sm">
               {!current ? (
                 <Text size="sm" c="dimmed">
@@ -234,11 +241,14 @@ export function BenchPanel({
         </Tabs.Panel>
         <Tabs.Panel value="power" h="100%">
           <ScrollArea h="100%">
+            {controls.power}
             <Stack p="sm" gap="sm">
               {!pow ? (
-                <Text size="sm" c="dimmed">
-                  Power readings appear here.
-                </Text>
+                controls.power ? null : (
+                  <Text size="sm" c="dimmed">
+                    Power readings appear here.
+                  </Text>
+                )
               ) : (
                 <>
                   <Text size="sm" fw={600}>
