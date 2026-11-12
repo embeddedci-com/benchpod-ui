@@ -44,7 +44,7 @@ const FAULTS = [
 ]
 
 export function FaultControls({ library, output, run, busy, setError }: { library: WaveformLibrary; output: string; run: Run; busy: boolean; setError: (e: string | undefined) => void }) {
-  const [items, setItems] = useState<WaveformMeta[]>([])
+  const [items, setItems] = useState<WaveformMeta[] | null>(null)
   const [id, setId] = useState<string | null>(null)
   const [type, setType] = useState<FaultType>('flatline')
   const [start, setStart] = useState(50)
@@ -56,7 +56,7 @@ export function FaultControls({ library, output, run, busy, setError }: { librar
   }, [library, setError])
   useEffect(() => setLevel(output === 'current_out' ? 4 : 0), [output])
 
-  const wf = items.find((w) => w.id === id) ?? items[0]
+  const wf = items?.find((w) => w.id === id) ?? items?.[0]
   const unit = unitOf(output)
   const r = pathRange(output)
   const scaled = !!wf && (wf.unit === 'mA') !== (output === 'current_out')
@@ -70,6 +70,7 @@ export function FaultControls({ library, output, run, busy, setError }: { librar
     )
   }
 
+  if (!items) return null
   if (!items.length)
     return (
       <Text size="xs" c="dimmed">
@@ -257,6 +258,8 @@ export function LoopControls({ call, output, run, busy }: { call: BenchCall; out
   const [tickDiv, setTickDiv] = useState<number | ''>(64)
   const [source, setSource] = useState('adc')
   const [inputPct, setInputPct] = useState(0)
+  const pctRef = useRef(0)
+  pctRef.current = inputPct
   const [sweepS, setSweepS] = useState<number | ''>(2)
   const [armed, setArmed] = useState(false)
   const [probe, setProbe] = useState<Probe | null>(null)
@@ -306,10 +309,21 @@ export function LoopControls({ call, output, run, busy }: { call: BenchCall; out
     setArmed(false)
     setProbe(null)
   }
-  const retarget = (patch: { input_code?: number; source?: string }) => {
+  const retarget = (label: string, patch: { input_code?: number; source?: string }) => {
     if (!armed) return
-    void run(patch.source ? `loop input: ${patch.source}` : `loop input held at ${inputPct}%`, () => call('loop_input', patch))
+    void run(label, () => call('loop_input', patch))
   }
+
+  // A running loop with a held input follows the slider (a quarter second after it stops moving:
+  // the slider's own onChangeEnd can report the value from before a click).
+  const armedRef = useRef(false)
+  armedRef.current = armed
+  useEffect(() => {
+    if (!armedRef.current || source !== 'fixed') return
+    const t = setTimeout(() => retarget(`loop input held at ${inputPct}%`, { source: 'fixed', input_code: percentToCode(inputPct) }), 250)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputPct])
 
   // The live operating point while armed, every half second; a dropped poll is skipped.
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -367,7 +381,7 @@ export function LoopControls({ call, output, run, busy }: { call: BenchCall; out
             value={source}
             onChange={(v) => {
               setSource(v)
-              if (v !== 'sweep') retarget({ source: v, input_code: percentToCode(inputPct) })
+              if (v !== 'sweep') retarget(v === 'adc' ? 'loop input: the ADC (closed loop)' : `loop input held at ${pctRef.current}%`, { source: v, input_code: percentToCode(pctRef.current) })
             }}
           />
         </Stack>
@@ -378,7 +392,10 @@ export function LoopControls({ call, output, run, busy }: { call: BenchCall; out
           <Text size="xs">
             Held input {inputPct}%{expected !== undefined ? `: the output settles at ${codeToValue(expected, path).toFixed(3)} V` : ''}
           </Text>
-          <Slider size="sm" value={inputPct} onChange={setInputPct} onChangeEnd={(v) => retarget({ source: 'fixed', input_code: percentToCode(v) })} min={0} max={100} label={null} aria-label="Held input" />
+          <Slider
+            size="sm"
+            value={inputPct}
+            onChange={setInputPct} min={0} max={100} label={null} thumbLabel="Held input" />
         </Stack>
       ) : null}
       {error ? (

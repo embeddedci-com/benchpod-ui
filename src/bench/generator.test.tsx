@@ -119,3 +119,19 @@ describe('GeneratorControls extras', () => {
     expect(call.mock.calls[2]).toEqual(['loop_probe', {}, { poll: true }])
   })
 })
+
+describe('LoopControls held input', () => {
+  it('moves a running loop with loop_input after the slider settles', async () => {
+    const call = vi.fn<BenchCall>(async (tool) => (tool === 'loop_probe' ? { text: '', structured: { i: 1, v: 0, loop_input: 0 } } : ok()))
+    harness(call)
+    fireEvent.click(screen.getByText('Control loop'))
+    fireEvent.click(screen.getByText('Fixed'))
+    fireEvent.click(screen.getByText('Start loop'))
+    await waitFor(() => expect(call.mock.calls.some(([t]) => t === 'control_loop')).toBe(true))
+    await screen.findByText('Re-arm')
+    const slider = screen.getByRole('slider')
+    slider.focus()
+    fireEvent.keyDown(slider, { key: 'End' })
+    await waitFor(() => expect(call.mock.calls.find(([t]) => t === 'loop_input')).toEqual(['loop_input', { source: 'fixed', input_code: 65535 }]))
+  })
+})
