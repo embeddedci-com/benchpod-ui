@@ -12,6 +12,7 @@ export { BenchPanel, benchOutputs, type PanelTab, type PanelControls, type Conso
 export { useBenchCall, benchData, benchError, type BenchCall, type BenchResult, type BenchCallOptions } from './bench/benchCall'
 export { PowerControls, type PowerStatus } from './bench/PowerControls'
 export { ConsoleTerminal, type ConsoleLogEntry } from './bench/ConsoleTerminal'
+export { GeneratorControls, parseWaveformCsv, type WaveformLibrary, type WaveformMeta } from './bench/GeneratorControls'
 export { CaptureCanvas, useCanvasColors, type LaEdge, type LaneAnnotation, type DacTrack, type CanvasColors } from './capture/CaptureCanvas'
 export {
   DecodeTable,
