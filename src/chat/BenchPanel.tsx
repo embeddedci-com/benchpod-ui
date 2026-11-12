@@ -207,9 +207,11 @@ export function BenchPanel({
             {controls.captures}
             <Stack p="sm" gap="sm">
               {!current ? (
-                <Text size="sm" c="dimmed">
-                  ADC and logic captures appear here.
-                </Text>
+                controls.captures ? null : (
+                  <Text size="sm" c="dimmed">
+                    ADC and logic captures appear here.
+                  </Text>
+                )
               ) : (
                 <>
                   <Text size="sm" fw={600}>
