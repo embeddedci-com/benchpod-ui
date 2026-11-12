@@ -77,6 +77,10 @@ const ADC_RATES = [
   { value: '100000', label: '100 kS/s' },
   { value: '400000', label: '400 kS/s' },
 ]
+const ADC_SOURCES = [
+  { value: 'ext', label: 'SMA input' },
+  { value: 'current_in', label: '4-20 mA input' },
+]
 const EDGES = [
   { value: 'rising', label: 'rising' },
   { value: 'falling', label: 'falling' },
@@ -121,6 +125,7 @@ export function CaptureView({
   const [duration, setDuration] = useState('0.01')
   const [laRate, setLaRate] = useState('1000000')
   const [adcRate, setAdcRate] = useState('100000')
+  const [source, setSource] = useState('ext')
   const [trigger, setTrigger] = useState<string | null>(null)
   const [edge, setEdge] = useState('rising')
   const [busy, setBusy] = useState(false)
@@ -192,13 +197,14 @@ export function CaptureView({
       const trig: Record<string, unknown> = trigger ? { trigger_la: Number(trigger), trigger_edge: edge } : {}
       let r
       if (mode === 'la') r = await call('capture_la', { samples: laN, sample_rate_hz: Number(laRate), ...trig })
-      else if (mode === 'adc') r = await call('capture_adc', { samples: adcN, sample_rate_hz: Number(adcRate), ...trig })
+      else if (mode === 'adc') r = await call('capture_adc', { samples: adcN, sample_rate_hz: Number(adcRate), source, ...trig })
       else
         r = await call('capture_correlated', {
           la_samples: laN,
           la_sample_rate_hz: Number(laRate),
           adc_samples: adcN,
           adc_sample_rate_hz: Number(adcRate),
+          source,
           ...trig,
         })
       const e = benchError(r)
@@ -259,6 +265,7 @@ export function CaptureView({
         <Select size="xs" w={96} label="Capture" data={MODES} value={mode} onChange={(v) => v && setMode(v as Mode)} allowDeselect={false} />
         <Select size="xs" w={88} label="Length" data={DURATIONS} value={duration} onChange={(v) => v && setDuration(v)} allowDeselect={false} />
         {mode !== 'adc' ? <Select size="xs" w={104} label="Logic rate" data={LA_RATES} value={laRate} onChange={(v) => v && setLaRate(v)} allowDeselect={false} /> : null}
+        {mode !== 'la' ? <Select size="xs" w={120} label="Analog input" data={ADC_SOURCES} value={source} onChange={(v) => v && setSource(v)} allowDeselect={false} /> : null}
         {mode !== 'la' ? <Select size="xs" w={104} label="Analog rate" data={ADC_RATES} value={adcRate} onChange={(v) => v && setAdcRate(v)} allowDeselect={false} /> : null}
         <Select size="xs" w={92} label="Trigger" placeholder="none" data={CH_OPTIONS} value={trigger} onChange={setTrigger} clearable />
         {trigger ? <Select size="xs" w={88} label="on" data={EDGES} value={edge} onChange={(v) => v && setEdge(v)} allowDeselect={false} /> : null}

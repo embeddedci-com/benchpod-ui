@@ -49,3 +49,16 @@ describe('useBenchCall', () => {
     expect(benchError(r)).toBeUndefined()
   })
 })
+
+describe('parseWaveformCsv', () => {
+  it('takes one value per line', async () => {
+    const { parseWaveformCsv } = await import('./GeneratorControls')
+    expect(parseWaveformCsv('0\n1.5\n\n3\n')).toEqual({ samples: [0, 1.5, 3], rateHz: undefined })
+  })
+  it('reads the rate from a time column and skips a header', async () => {
+    const { parseWaveformCsv } = await import('./GeneratorControls')
+    const r = parseWaveformCsv('time,volts\n0,0.1\n0.001,0.2\n0.002,0.3\n')
+    expect(r.samples).toEqual([0.1, 0.2, 0.3])
+    expect(r.rateHz).toBeCloseTo(1000)
+  })
+})
