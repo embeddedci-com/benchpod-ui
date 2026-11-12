@@ -47,3 +47,4 @@ export {
   type WiringSignal,
   type WiringFieldIssue,
 } from './wiring/model'
+export * from './sensors'
