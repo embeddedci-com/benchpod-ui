@@ -28,3 +28,15 @@ export {
   type SpiFrame,
 } from './capture/DecodeTables'
 export { CaptureView, type FetchCapture, type LaCaptureData, type AdcCaptureData, type DecodeData } from './capture/CaptureView'
+export { WiringEditor, WiringChannelMap } from './wiring/WiringEditor'
+export {
+  effectiveWiring,
+  validateWiring,
+  laChannelMap,
+  laChannelLabel,
+  WIRING_DEFAULTS,
+  WIRING_ROLES,
+  type Wiring,
+  type WiringSignal,
+  type WiringFieldIssue,
+} from './wiring/model'
