@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Group, Menu, Select, Stack, Table, Tabs, Text, TextInput, Title, Tooltip } from '@mantine/core'
+import { Alert, Badge, Button, Card, Group, Menu, SegmentedControl, Select, Stack, Table, Text, TextInput, Title, Tooltip } from '@mantine/core'
 import type { DefinitionKind, SensorKind } from '../engine'
 import { KIND_LABELS, SENSOR_KINDS } from '../model'
 import type { SensorPod } from '../pod'
@@ -180,86 +180,86 @@ export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, 
         </Alert>
       )}
       {mineError && <Alert color="red">{mineError}</Alert>}
-      <Tabs
+      {/* A segmented control, not tabs: the host page usually sits in a tab called Sensors. */}
+      <SegmentedControl
+        aria-label="Sensors view"
         value={view.tab}
         onChange={(t) => {
-          if (!t) return
           setView({ tab: t as View['tab'], open: null })
           void reload()
           if (t === 'pod') refresh()
         }}
-        keepMounted={false}
-      >
-        <Tabs.List>
-          <Tabs.Tab value="sensors">Sensors</Tabs.Tab>
-          <Tabs.Tab value="stimuli">Stimuli</Tabs.Tab>
-          <Tabs.Tab value="pod">On the pod{running.length ? ` (${running.length})` : ''}</Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="sensors" pt="md">
-          <Stack gap="lg">
-            <MyDefinitions
-              title="My sensors"
-              kinds={SENSOR_KINDS}
-              defs={sensors}
-              loading={mine === null}
-              store={store}
-              files={files}
-              onOpen={openMine}
-              onNew={(kind) => setView({ tab: 'sensors', open: 'editor', doc: { from: 'new', source: templateFor(kind) } })}
-              onUpload={upload}
-              onChanged={reload}
-              onError={fail}
-              empty="No sensors yet. Duplicate one from the library, start from a template, or upload a file."
-            />
-            <LibraryCard store={store} files={files} onOpen={(doc) => setView({ tab: 'sensors', open: 'editor', doc })} onCopy={copyFromLibrary} onError={fail} />
-          </Stack>
-        </Tabs.Panel>
-        <Tabs.Panel value="stimuli" pt="md">
+        data={[
+          { value: 'sensors', label: 'Sensors' },
+          { value: 'stimuli', label: 'Stimuli' },
+          { value: 'pod', label: `On the pod${running.length ? ` (${running.length})` : ''}` },
+        ]}
+        style={{ alignSelf: 'flex-start' }}
+      />
+      {view.tab === 'sensors' && (
+        <Stack gap="lg">
           <MyDefinitions
-            title="Stimuli"
-            kinds={['stimulus']}
-            defs={stimuli}
+            title="My sensors"
+            kinds={SENSOR_KINDS}
+            defs={sensors}
             loading={mine === null}
             store={store}
             files={files}
             onOpen={openMine}
-            onNew={() => setView({ tab: 'stimuli', open: 'stimulus', source: templateFor('stimulus') })}
+            onNew={(kind) => setView({ tab: 'sensors', open: 'editor', doc: { from: 'new', source: templateFor(kind) } })}
             onUpload={upload}
             onChanged={reload}
             onError={fail}
-            empty="No stimuli yet. A stimulus changes a running sensor's values over time and injects faults."
+            empty="No sensors yet. Duplicate one from the library, start from a template, or upload a file."
           />
-        </Tabs.Panel>
-        <Tabs.Panel value="pod" pt="md">
-          <Stack gap="md">
-            {block && (
-              <Text size="sm" c="dimmed">
-                {block}.
-              </Text>
-            )}
-            {!block && running.length === 0 && (
-              <Text size="sm" c="dimmed">
-                Nothing runs on the pod. Open a sensor and start it from its Run on the pod panel.
-              </Text>
-            )}
-            {status?.stimulus?.loaded && (
-              <Text size="sm">
-                Stimulus {status.stimulus.running ? `running, t = ${(status.stimulus.t_s ?? 0).toFixed(1)} s` : 'loaded, stopped'}
-              </Text>
-            )}
-            {running.map((i) => (
-              <InstanceCard key={i.instance} pod={pod} inst={i} block={block} onChanged={refresh} />
-            ))}
-            {running.length > 1 && (
-              <Group>
-                <Button color="red" variant="light" size="xs" onClick={() => pod?.stop().then(refresh, fail)}>
-                  Stop all
-                </Button>
-              </Group>
-            )}
-          </Stack>
-        </Tabs.Panel>
-      </Tabs>
+          <LibraryCard store={store} files={files} onOpen={(doc) => setView({ tab: 'sensors', open: 'editor', doc })} onCopy={copyFromLibrary} onError={fail} />
+        </Stack>
+      )}
+      {view.tab === 'stimuli' && (
+        <MyDefinitions
+          title="Stimuli"
+          kinds={['stimulus']}
+          defs={stimuli}
+          loading={mine === null}
+          store={store}
+          files={files}
+          onOpen={openMine}
+          onNew={() => setView({ tab: 'stimuli', open: 'stimulus', source: templateFor('stimulus') })}
+          onUpload={upload}
+          onChanged={reload}
+          onError={fail}
+          empty="No stimuli yet. A stimulus changes a running sensor's values over time and injects faults."
+        />
+      )}
+      {view.tab === 'pod' && (
+        <Stack gap="md">
+          {block && (
+            <Text size="sm" c="dimmed">
+              {block}.
+            </Text>
+          )}
+          {!block && running.length === 0 && (
+            <Text size="sm" c="dimmed">
+              Nothing runs on the pod. Open a sensor and start it from its Run on the pod panel.
+            </Text>
+          )}
+          {status?.stimulus?.loaded && (
+            <Text size="sm">
+              Stimulus {status.stimulus.running ? `running, t = ${(status.stimulus.t_s ?? 0).toFixed(1)} s` : 'loaded, stopped'}
+            </Text>
+          )}
+          {running.map((i) => (
+            <InstanceCard key={i.instance} pod={pod} inst={i} block={block} onChanged={refresh} />
+          ))}
+          {running.length > 1 && (
+            <Group>
+              <Button color="red" variant="light" size="xs" onClick={() => pod?.stop().then(refresh, fail)}>
+                Stop all
+              </Button>
+            </Group>
+          )}
+        </Stack>
+      )}
       {children}
     </Stack>
   )
