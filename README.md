@@ -37,7 +37,7 @@ and draws the last capture from the host's copy of the BenchPod MCP server's cap
 (`benchpod://capture/la`, `/adc`, `/decode`).
 
 `src/wiring/model.ts` is the web app's wiring profile model (schema v1: keys, defaults, checks,
-the LA channel map), and `WiringEditor` edits a profile object and hands it to the host to apply.
+the LA channel map, each wired pin's DUT direction), and `WiringEditor` edits a profile object and hands it to the host to apply.
 
 ## Bus console
 

@@ -43,6 +43,16 @@ const DEFAULT_OUTPUT_STAGE = {
 export type WiringDirection = 'input' | 'output' | 'open_drain' | 'bidir'
 export const WIRING_DIRECTIONS: WiringDirection[] = ['input', 'output', 'open_drain', 'bidir']
 
+/** Which way the DUT's signal goes (the pod's `la_dir`): the pod refuses a push-pull driver on a `dut_output` pin. */
+export type WiringDutDir = 'dut_input' | 'dut_output' | 'bidir'
+export const WIRING_DUT_DIRS: WiringDutDir[] = ['dut_output', 'dut_input', 'bidir']
+/** Short labels for the DUT directions, from the board's side. */
+export const WIRING_DUT_DIR_LABELS: Record<WiringDutDir, string> = {
+  dut_output: 'board output',
+  dut_input: 'board input',
+  bidir: 'bidirectional',
+}
+
 /** A named DUT signal on an LA channel that isn't one of the fixed roles (e.g. TRIGGER on LA9). */
 export type WiringSignal = {
   name: string
@@ -77,6 +87,12 @@ export type Wiring = {
   spi_miso: number | null
   spi_cs: number | null
   signals: WiringSignal[]
+  /**
+   * The DUT direction of a role or signal where its default is wrong: role key or signal name ->
+   * direction. Every wired role and signal has a default (ROLE_DUT_DIRS, SIGNAL_DUT_DIRS); the
+   * hosts send the result to the pod with `la_dir` when the wiring is applied.
+   */
+  dut_dirs: Record<string, WiringDutDir>
   /**
    * The control loop's INPUT sense chain — what the ADC is actually wired to, so the loop can
    * be configured in the unit the bench measures instead of raw ADC codes. Lives here rather
@@ -191,6 +207,7 @@ export const WIRING_DEFAULTS: Wiring = {
   spi_miso: null,
   spi_cs: null,
   signals: [],
+  dut_dirs: {},
   loop_input_unit: DEFAULT_LOOP_INPUT.unit,
   loop_input_mv_at_zero: DEFAULT_LOOP_INPUT.mvAtZero,
   loop_input_mv_per_unit: DEFAULT_LOOP_INPUT.mvPerUnit,
@@ -267,6 +284,8 @@ export function coerceStoredWiring(remote: Record<string, unknown>): StoredWirin
     const d = (DEFAULTS as Record<string, unknown>)[k]
     if (k === 'signals') {
       if (Array.isArray(v)) out.signals = v.filter(isRecord).map(coerceSignal)
+    } else if (k === 'dut_dirs') {
+      if (isRecord(v)) out.dut_dirs = Object.fromEntries(Object.entries(v).filter(([, d]) => isDutDir(d)))
     } else if (k === 'loop_input_entry') {
       if (v === 'shunt' || v === 'mv_per_unit') out[k] = v
     } else if (k === 'loop_output_path') {
@@ -281,6 +300,64 @@ export function coerceStoredWiring(remote: Record<string, unknown>): StoredWirin
     }
   }
   return out as StoredWiring
+}
+
+function isDutDir(v: unknown): v is WiringDutDir {
+  return WIRING_DUT_DIRS.includes(v as WiringDutDir)
+}
+
+/** The default DUT direction of each role: uart_rx is the pod's receive line, so the board drives it. */
+export const ROLE_DUT_DIRS: Record<WiringRole, WiringDutDir> = {
+  uart_rx: 'dut_output',
+  uart_tx: 'dut_input',
+  i2c_sda: 'bidir',
+  i2c_scl: 'bidir',
+  swd_swclk: 'dut_input',
+  swd_swdio: 'bidir',
+  spi_sclk: 'dut_input',
+  spi_mosi: 'dut_input',
+  spi_miso: 'dut_output',
+  spi_cs: 'dut_input',
+}
+
+/** The default DUT direction of a signal from its (pod-side) direction: one the pod watches is a board output. */
+export const SIGNAL_DUT_DIRS: Record<WiringDirection, WiringDutDir> = {
+  input: 'dut_output',
+  output: 'dut_input',
+  open_drain: 'bidir',
+  bidir: 'bidir',
+}
+
+/** The profile's explicit direction for a role or signal name (case-insensitive), or undefined. */
+export function dutDirOverride(w: Pick<Wiring, 'dut_dirs'>, name: string): WiringDutDir | undefined {
+  const key = Object.keys(w.dut_dirs ?? {}).find((k) => k.toLowerCase() === name.toLowerCase())
+  return key === undefined ? undefined : w.dut_dirs[key]
+}
+
+/** The default direction of a role or signal, ignoring dut_dirs. */
+export function defaultDutDir(w: Wiring, name: string): WiringDutDir {
+  if ((WIRING_ROLES as readonly string[]).includes(name)) return ROLE_DUT_DIRS[name as WiringRole]
+  const sig = w.signals.find((s) => s.name.toLowerCase() === name.toLowerCase())
+  return sig ? SIGNAL_DUT_DIRS[sig.direction] ?? 'dut_output' : 'dut_output'
+}
+
+/** The DUT direction of a role or signal: its dut_dirs entry, else its default. */
+export function wiringDutDir(w: Wiring, name: string): WiringDutDir {
+  return dutDirOverride(w, name) ?? defaultDutDir(w, name)
+}
+
+/** LA channel -> the DUT direction of what is wired to it, as the pod gets it with `la_dir`. */
+export function pinDutDirs(w: Wiring): Record<number, WiringDutDir> {
+  const out: Record<number, WiringDutDir> = {}
+  for (const u of channelUsers(w)) out[u.la] = wiringDutDir(w, u.kind === 'role' ? u.field : u.id)
+  return out
+}
+
+/** dut_dirs with one entry set (or removed with `undefined`), keyed as given. */
+export function withDutDir(w: Pick<Wiring, 'dut_dirs'>, name: string, dir: WiringDutDir | undefined): Record<string, WiringDutDir> {
+  const out = Object.fromEntries(Object.entries(w.dut_dirs ?? {}).filter(([k]) => k.toLowerCase() !== name.toLowerCase()))
+  if (dir) out[name] = dir
+  return out
 }
 
 function coerceSignal(s: Record<string, unknown>): WiringSignal {
@@ -426,6 +503,22 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
     }
   }
 
+  if (has('dut_dirs')) {
+    const dirs = raw.dut_dirs
+    if (!isRecord(dirs)) {
+      err('dut_dirs', 'dut_dirs must be an object of role or signal name -> direction')
+    } else {
+      const names = new Set(
+        (Array.isArray(raw.signals) ? raw.signals : []).filter(isRecord).map((s) => (typeof s.name === 'string' ? s.name.toLowerCase() : '')),
+      )
+      for (const [k, d] of Object.entries(dirs)) {
+        if (!(WIRING_ROLES as readonly string[]).includes(k) && !names.has(k.toLowerCase()))
+          err(`dut_dirs.${k}`, `dut_dirs.${k}: "${k}" is not a wiring role or a signal name`)
+        else if (!isDutDir(d)) err(`dut_dirs.${k}`, `dut_dirs.${k} must be one of dut_input, dut_output, bidir`)
+      }
+    }
+  }
+
   // Channel conflicts on the effective profile. Fields that already failed type/range checks are left
   // out, so a bad value doesn't also report a phantom conflict with the default it fell back to.
   const eff = effectiveWiring(raw)
@@ -448,12 +541,15 @@ export type LaChannelInfo = {
   /** More than one role/signal on this channel — the profile can't be saved like this. */
   conflict: boolean
   warnings: string[]
+  /** The DUT direction of what is wired here (null when nothing is). */
+  dutDir: WiringDutDir | null
 }
 
 /** Per-LA-channel view of a profile: who uses each of LA1..LA14, its pull resistor, conflicts/warnings. */
 export function laChannelMap(w: Wiring): LaChannelInfo[] {
   const users = channelUsers(w)
   const warnings = pullWarnings(w)
+  const dirs = pinDutDirs(w)
   return LA_PULLS.map((pull) => {
     const here = users.filter((u) => u.la === pull.la)
     const fields = new Set(here.map((u) => u.field))
@@ -463,6 +559,7 @@ export function laChannelMap(w: Wiring): LaChannelInfo[] {
       users: here.map(({ kind, id, label, field }) => ({ kind, id, label, field })),
       conflict: here.length > 1,
       warnings: warnings.filter((x) => fields.has(x.field)).map((x) => x.message),
+      dutDir: dirs[pull.la] ?? null,
     }
   })
 }

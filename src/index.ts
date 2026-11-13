@@ -43,12 +43,8 @@ export { GpioTab } from './bus/GpioTab'
 export { SpiTab, spiPinArgs } from './bus/SpiTab'
 export { CanTab, parseCanId, canDataOk } from './bus/CanTab'
 export { TransactionLog } from './bus/TransactionLog'
-export { captureArgs, type SendSpec, type SendResult, type SendCapture, type SendCaptureOutcome } from './bus/sendCapture'
-export { DeviceRegs, type SpiTransfer } from './bus/DeviceRegs'
-export { parseDevice, decodeValue, encodeValue, i2cRegHex, spiCmd, spiReadHex, spiReadValue, spiWriteHex, type DeviceDef, type DeviceReg, type FieldType } from './bus/device'
-export { i2cSendAgain, spiBursts, type SendAgain, type SendAgainRequest } from './bus/sendAgain'
-export { logRow, logRows, loggedCall, canFrameText, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
-export { WiringEditor, WiringChannelMap } from './wiring/WiringEditor'
+export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
+export { WiringEditor, WiringChannelMap, WiringDirections } from './wiring/WiringEditor'
 export {
   effectiveWiring,
   validateWiring,
@@ -56,8 +52,18 @@ export {
   laChannelLabel,
   WIRING_DEFAULTS,
   WIRING_ROLES,
+  WIRING_DUT_DIRS,
+  WIRING_DUT_DIR_LABELS,
+  ROLE_DUT_DIRS,
+  SIGNAL_DUT_DIRS,
+  wiringDutDir,
+  defaultDutDir,
+  dutDirOverride,
+  pinDutDirs,
+  withDutDir,
   type Wiring,
   type WiringSignal,
+  type WiringDutDir,
   type WiringFieldIssue,
 } from './wiring/model'
 // Sensors: import from '@bpui/sensors'; the root re-exports them as a namespace (several names, e.g.
