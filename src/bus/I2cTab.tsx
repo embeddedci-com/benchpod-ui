@@ -163,8 +163,8 @@ export function I2cTab({
   return (
     <Stack gap="xs" p="sm">
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <Select size="xs" w={84} label="SDA" data={LA} value={sda} onChange={setSda} placeholder="wiring" clearable comboboxProps={{ withinPortal: true }} />
-        <Select size="xs" w={84} label="SCL" data={LA} value={scl} onChange={setScl} placeholder="wiring" clearable comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={84} label="SDA" data={LA} value={sda} onChange={setSda} placeholder={wiredSda ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={84} label="SCL" data={LA} value={scl} onChange={setScl} placeholder={wiredScl ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
         <Select size="xs" w={96} label="Speed" data={SPEEDS} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} />
         <Stack gap={2}>
           <Text size="xs" fw={500}>

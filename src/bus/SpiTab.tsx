@@ -146,7 +146,7 @@ export function SpiTab({
       data={LA}
       value={pins[k]}
       onChange={(v) => setPins((p) => ({ ...p, [k]: v }))}
-      placeholder="wiring"
+      placeholder={wired?.[k] ? 'wiring' : 'not wired'}
       clearable
       comboboxProps={{ withinPortal: true }}
     />
