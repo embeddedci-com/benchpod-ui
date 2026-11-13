@@ -10,7 +10,7 @@ const GROUPS: { title: string; ask: string; match: (n: string) => boolean }[] = 
   { title: 'Power and reset', ask: 'Power-cycle the board and show me its boot log.', match: (n) => /^(power_|measure_power|reset_target)/.test(n) },
   { title: 'Firmware', ask: 'Flash build/app.elf and check it boots.', match: (n) => /^(flash|spi_)/.test(n) },
   { title: 'UART console', ask: 'Run the info command on the console.', match: (n) => /^(uart_|capture_uart)/.test(n) },
-  { title: 'Sensor emulation', ask: 'Emulate a BMP280 at 30 °C.', match: (n) => /(i2c_sensor|_gps|gps_|set_pull|pull_status)/.test(n) },
+  { title: 'Sensor emulation', ask: 'Emulate a BMP280 at 30 °C.', match: (n) => /^(sensor_|set_pull|pull_status)/.test(n) },
   { title: 'Logic and GPIO', ask: 'Capture the I2C lines and decode them.', match: (n) => /^(capture_la|decode_la|la_|gpio_|capture_correlated)/.test(n) },
   { title: 'Analog', ask: 'Drive 1 V on the DAC and capture the ADC.', match: (n) => /^(dac_|adc_|capture_adc|generate|replay|list_waveforms|current_out|control_loop|loop_|analog_path|calibrate|save_capture)/.test(n) },
   { title: 'CAN', ask: 'Send a CAN frame and show the reply.', match: (n) => /^can_/.test(n) },

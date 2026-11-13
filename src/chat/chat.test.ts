@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyEvent, itemsFromHistory, type ChatItem } from './useChat'
 import { readEvents, type ChatEvent } from './protocol'
 import { parseBlocks } from './Markdown'
-import { callSummary } from './ChatView'
+import { OPEN_BY_DEFAULT, callSummary } from './ChatView'
 
 const call = { id: 'c1', name: 'uart_read', arguments: '{"until_regex":"ready>"}' }
 
@@ -81,6 +81,13 @@ describe('callSummary', () => {
   })
 })
 
+describe('OPEN_BY_DEFAULT', () => {
+  it('opens the results worth reading, sensor captures and registers among them', () => {
+    for (const name of ['uart_read', 'capture_la', 'sensor_capture', 'sensor_regs']) expect(OPEN_BY_DEFAULT.test(name)).toBe(true)
+    for (const name of ['sensor_start', 'sensor_set', 'status']) expect(OPEN_BY_DEFAULT.test(name)).toBe(false)
+  })
+})
+
 import { groupTools } from './ToolsList'
 
 describe('groupTools', () => {
@@ -88,7 +95,7 @@ describe('groupTools', () => {
     const g = groupTools([
       { name: 'uart_read', summary: '' },
       { name: 'status', summary: '' },
-      { name: 'enable_i2c_sensor', summary: '' },
+      { name: 'sensor_start', summary: '' },
       { name: 'power_on', summary: '' },
       { name: 'brand_new_tool', summary: '' },
     ])
