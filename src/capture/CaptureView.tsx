@@ -180,7 +180,10 @@ export function CaptureView({
         return l
       })
       setAdc((old) => (!a.seq ? null : old?.seq === a.seq ? old : a))
-      setDecoded(d.seq && (d.transactions || d.frames) ? d : null)
+      const dec = d.seq && (d.transactions || d.frames) ? d : null
+      setDecoded(dec)
+      // A decode made elsewhere (the agent, the bus console): the picker shows its protocol.
+      if (dec?.protocol && PROTOCOLS.some((x) => x.value === dec.protocol)) setProtocol(dec.protocol)
     } catch (e) {
       setError((e as Error).message)
     }
