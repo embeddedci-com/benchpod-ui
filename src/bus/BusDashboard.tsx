@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button, Divider, Group, Paper, Stack, Tabs, Text } from '@mantine/core'
+import { Button, CloseButton, Divider, Group, Paper, Stack, Tabs, Text } from '@mantine/core'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { CaptureView, type FetchCapture } from '../capture/CaptureView'
 import { PinStrip } from './PinStrip'
@@ -32,6 +32,10 @@ export function BusDashboard({
   renderConsole,
   initialTab = 'i2c',
   sequences,
+  capture = 'top',
+  pins = true,
+  consoleTab = true,
+  onPinsChange,
 }: {
   call: BenchCall
   fetchCapture: FetchCapture
@@ -42,9 +46,19 @@ export function BusDashboard({
   initialTab?: string
   /** Where saved sequences are kept (embeddedci.com or a local file); without it the log has no selection. */
   sequences?: SequenceStore
+  /** Where the capture view goes: 'top' (default, controls and trace above the pins) or 'after-send'
+   * (no capture controls: a host with its own capture tool; a send and capture shows its trace in
+   * the panel, below the bus tabs). */
+  capture?: 'top' | 'after-send'
+  /** false leaves the pin strip out (the host draws its own, shared with its other tools). */
+  pins?: boolean
+  /** false leaves the Console tab out (the host has its own terminal). */
+  consoleTab?: boolean
+  /** Called after each call that may change the pins, for a pin strip the host draws. */
+  onPinsChange?: () => void
 }) {
   const [picked, setPicked] = useState<Set<number>>(() => new Set())
-  const [tab, setTab] = useState<string>(initialTab)
+  const [tab, setTab] = useState<string>(!consoleTab && initialTab === 'console' ? 'i2c' : initialTab)
   const [rows, setRows] = useState<BusLogRow[]>([])
   const [wiring, setWiring] = useState<Wiring | null>(null)
   const [pinsKey, setPinsKey] = useState(0)
@@ -65,12 +79,17 @@ export function BusDashboard({
     const mk = (p: BusProto, only?: (t: string) => boolean) => loggedCall(call, p, add, only)
     return { i2c: mk('I2C'), spi: mk('SPI'), can: mk('CAN'), gpio: mk('GPIO'), uart: mk('UART', (t) => UART_LOGGED.has(t)) }
   }, [call, add])
-  const pinsChanged = useCallback(() => setPinsKey((k) => k + 1), [])
+  const pinsChanged = useCallback(() => {
+    setPinsKey((k) => k + 1)
+    onPinsChange?.()
+  }, [onPinsChange])
 
   // Send and capture: capture_la with a send, decoded when the bus has a decoder, then the trace
   // above reloads. The log row keeps the capture's seq, so it can point at the trace.
   const [capKey, setCapKey] = useState(0)
   const [traceNote, setTraceNote] = useState<string | null>(null)
+  // 'after-send': the trace shows once a send and capture ran, until closed.
+  const [sendTraceOpen, setSendTraceOpen] = useState(false)
   const traceRef = useRef<HTMLDivElement>(null)
   const sendCapture = useCallback(
     (proto: BusProto): SendCapture =>
@@ -90,6 +109,7 @@ export function BusDashboard({
           }
           setCapKey((k) => k + 1)
           setTraceNote(null)
+          setSendTraceOpen(true)
         }
         add(seq ? { ...row, capture: seq } : row)
         pinsChanged()
@@ -134,6 +154,7 @@ export function BusDashboard({
 
   const showCapture = useCallback(
     async (seq: number) => {
+      setSendTraceOpen(true)
       traceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       let now = 0
       try {
@@ -146,29 +167,35 @@ export function BusDashboard({
     [fetchCapture],
   )
 
+  const note = traceNote ? (
+    <Text size="xs" c="orange" px="sm" pb="xs" data-testid="trace-note">
+      {traceNote}
+    </Text>
+  ) : null
+
   return (
     <Stack gap={0}>
-      <div ref={traceRef}>
-        <CaptureView call={call} fetchCapture={fetchCapture} refreshKey={`${String(refreshKey ?? '')}-${capKey}`} decodeActions={decodeActions} />
-        {traceNote ? (
-          <Text size="xs" c="orange" px="sm" pb="xs" data-testid="trace-note">
-            {traceNote}
-          </Text>
-        ) : null}
-      </div>
-      <Divider />
-      <Stack gap="sm" p="sm">
-        <PinStrip call={call} names={names} refreshKey={`${pinsKey}-${String(refreshKey ?? '')}`} />
+      {capture === 'top' ? (
+        <>
+          <div ref={traceRef}>
+            <CaptureView call={call} fetchCapture={fetchCapture} refreshKey={`${String(refreshKey ?? '')}-${capKey}`} decodeActions={decodeActions} />
+            {note}
+          </div>
+          <Divider />
+        </>
+      ) : null}
+      <Stack gap="sm" p={capture === 'top' ? 'sm' : 0}>
+        {pins ? <PinStrip call={call} names={names} refreshKey={`${pinsKey}-${String(refreshKey ?? '')}`} /> : null}
         <Paper withBorder radius="sm">
           <Tabs value={tab} onChange={(v) => v && setTab(v)} keepMounted={false}>
             <Tabs.List px="xs">
-              <Tabs.Tab value="console">Console</Tabs.Tab>
+              {consoleTab ? <Tabs.Tab value="console">Console</Tabs.Tab> : null}
               <Tabs.Tab value="i2c">I2C</Tabs.Tab>
               <Tabs.Tab value="spi">SPI</Tabs.Tab>
               <Tabs.Tab value="can">CAN</Tabs.Tab>
               <Tabs.Tab value="gpio">GPIO</Tabs.Tab>
             </Tabs.List>
-            <Tabs.Panel value="console">{renderConsole ? <div style={{ height: 360 }}>{renderConsole(calls.uart)}</div> : null}</Tabs.Panel>
+            {consoleTab ? <Tabs.Panel value="console">{renderConsole ? <div style={{ height: 360 }}>{renderConsole(calls.uart)}</div> : null}</Tabs.Panel> : null}
             <Tabs.Panel value="i2c">
               <I2cTab call={calls.i2c} wiredSda={wired('i2c_sda')} wiredScl={wired('i2c_scl')} sendCapture={senders.i2c} fill={again?.bus === 'i2c' ? again : null} onFilled={filled} onChange={pinsChanged} />
             </Tabs.Panel>
@@ -183,6 +210,18 @@ export function BusDashboard({
             </Tabs.Panel>
           </Tabs>
         </Paper>
+        {capture === 'after-send' && sendTraceOpen ? (
+          <Paper withBorder radius="sm" ref={traceRef} data-testid="send-trace">
+            <Group justify="space-between" px="sm" pt="xs">
+              <Text size="xs" fw={600}>
+                Capture from the last send
+              </Text>
+              <CloseButton size="sm" onClick={() => setSendTraceOpen(false)} aria-label="Close the capture from the last send" />
+            </Group>
+            <CaptureView call={call} fetchCapture={fetchCapture} refreshKey={`${String(refreshKey ?? '')}-${capKey}`} decodeActions={decodeActions} controls={false} />
+            {note}
+          </Paper>
+        ) : null}
         <Stack gap={4}>
           <TransactionLog
             rows={rows}
