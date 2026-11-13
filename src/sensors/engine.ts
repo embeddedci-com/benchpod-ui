@@ -20,6 +20,9 @@ export type EngineError = {
   expr_off?: number
 }
 
+/** Command-map sensors: image bytes `at` .. `at + span - 1` serve addresses `addr` .. `addr + span - 1`. */
+export type CommandMapEntry = { addr: number; at: number; span: number }
+
 export type ParamInfo = { key: string; unit?: string; label?: string; min: number; max: number; default: number }
 
 export type ValidateOk = {
@@ -29,7 +32,16 @@ export type ValidateOk = {
   label: string
   program_bytes: number
   params: ParamInfo[]
-  bus?: { address?: number; alt?: number[]; [k: string]: unknown } | null
+  bus?: {
+    address?: number
+    alt?: number[]
+    /** 2: word registers, register pointer p is image bytes 2p (MSB) and 2p + 1. */
+    register_bytes?: 1 | 2
+    /** 16-bit commands without a page; `map` says which image bytes each command address serves. */
+    command_map?: boolean
+    map?: CommandMapEntry[]
+    [k: string]: unknown
+  } | null
   dynamic?: number[]
   read_only?: number[]
   uart?: { baud: number; data_bits: number; parity: string; stop_bits: number; messages: number; requests: number }
