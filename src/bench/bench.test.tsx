@@ -73,3 +73,17 @@ describe('newerVersion', () => {
     expect(newerVersion(undefined, '3.10.1')).toBe(false)
   })
 })
+
+describe('SPI flash helpers', () => {
+  it('parses hex, decimal and k addresses', async () => {
+    const { parseSpiAddr } = await import('./SpiFlashControls')
+    expect(parseSpiAddr('0x1000')).toBe(4096)
+    expect(parseSpiAddr('4096')).toBe(4096)
+    expect(parseSpiAddr('64k')).toBe(65536)
+    expect(parseSpiAddr('zz')).toBeNaN()
+  })
+  it('dumps hex with addresses and ASCII', async () => {
+    const { hexDump } = await import('./SpiFlashControls')
+    expect(hexDump('48690a', 0x100)).toBe('000100  48 69 0a' + ' '.repeat(39) + '  Hi.')
+  })
+})

@@ -13,6 +13,7 @@ export { useBenchCall, benchData, benchError, type BenchCall, type BenchResult, 
 export { PowerControls, type PowerStatus } from './bench/PowerControls'
 export { ConsoleTerminal, type ConsoleLogEntry } from './bench/ConsoleTerminal'
 export { PodUpdate, newerVersion, type PodUpdater, type PodFirmwareInfo } from './bench/PodUpdate'
+export { SpiFlashControls, parseSpiAddr, hexDump } from './bench/SpiFlashControls'
 export { FlashControls, type FirmwareFile, type FirmwareStore } from './bench/FlashControls'
 export { GeneratorControls, parseWaveformCsv, type WaveformLibrary, type WaveformMeta } from './bench/GeneratorControls'
 export { FaultControls, SegmentControls, LoopControls } from './bench/GeneratorExtras'
