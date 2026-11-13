@@ -54,6 +54,15 @@ export function nackWhere(nackAt: number | null | undefined, written: number): s
   return 'NACK on the read address'
 }
 
+/** A CAN frame as "0x123 01 02 03", with "ext" for a 29-bit id. */
+export function canFrameText(id: number, data: number[], ext: boolean, rtr = false): string {
+  const idText = `0x${id.toString(16).toUpperCase().padStart(ext ? 8 : 3, '0')}`
+  const bytes = data.map((b) => b.toString(16).padStart(2, '0')).join(' ')
+  return [idText, ext ? 'ext' : '', rtr ? 'RTR' : `[${data.length}]`, bytes].filter(Boolean).join(' ')
+}
+
+type CanFrame = { id: number; data: number[]; ext: boolean; rtr: boolean; fd?: boolean; brs?: boolean; ts_ms: number }
+
 /** What a call sent, for the log's "out" column. */
 function outText(tool: string, a: Record<string, unknown>): string {
   switch (tool) {
@@ -90,6 +99,16 @@ function outText(tool: string, a: Record<string, unknown>): string {
       const pinsUsed = (['sck', 'mosi', 'miso', 'cs'] as const).filter((k) => a[k] !== undefined).map((k) => `${k.toUpperCase()} ${pins(a[k])}`)
       return `${spacedHex(String(a.tx_hex ?? ''))} (mode ${a.mode ?? 0}${pinsUsed.length ? `, ${pinsUsed.join(' ')}` : ''})`
     }
+    case 'can_open':
+      return `open ${fmtSi(Number(a.bitrate ?? 500_000), 'bit/s')}${a.data_bitrate ? `, data ${fmtSi(Number(a.data_bitrate), 'bit/s')}` : ''}, ${a.mode ?? 'normal'}${a.term ? ', 120 ohm' : ''}`
+    case 'can_close':
+      return 'close'
+    case 'can_status':
+      return 'status'
+    case 'can_read':
+      return 'read'
+    case 'can_write':
+      return canFrameText(Number(a.can_id), Array.isArray(a.data) ? (a.data as number[]) : [], !!a.ext)
     case 'uart_write':
       return `${String(a.text ?? '')}${a.line_ending === 'crlf' ? '\\r\\n' : a.line_ending === 'none' ? '' : '\\n'}`
     case 'uart_open':
@@ -130,6 +149,21 @@ export function logRow(id: number, time: number, proto: BusProto, tool: string, 
       row.note = `SCK ${fmtSi(d.hz, 'Hz')}`
       return row
     }
+    case 'can_open': {
+      const d = benchData<{ open: boolean; fd?: boolean }>(r)
+      if (d?.fd) row.note = 'CAN FD'
+      return row
+    }
+    case 'can_status': {
+      const d = benchData<{ reply?: Record<string, unknown> }>(r)
+      if (d?.reply) row.in = Object.entries(d.reply).map(([k, v]) => `${k} ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(', ')
+      return row
+    }
+    case 'can_write': {
+      const d = benchData<{ dlc?: number | null; fd?: boolean | null }>(r)
+      if (d?.fd) row.note = 'CAN FD'
+      return row
+    }
     case 'i2c_scan': {
       const d = benchData<I2cScan>(r)
       if (!d) return row
@@ -157,14 +191,35 @@ export function logRow(id: number, time: number, proto: BusProto, tool: string, 
   }
 }
 
-/** A BenchCall that also logs each call that is not a poll. */
+/**
+ * The log rows for a call: one, except can_read, which gives a row per frame it read (none for a
+ * poll that read nothing, so "Keep reading" only logs what came in).
+ */
+export function logRows(time: number, proto: BusProto, tool: string, args: Record<string, unknown>, r: BenchResult, poll = false): Omit<BusLogRow, 'id'>[] {
+  const one = (): Omit<BusLogRow, 'id'>[] => {
+    const { id: _id, ...row } = logRow(0, time, proto, tool, args, r)
+    return [row]
+  }
+  if (tool !== 'can_read') return poll ? [] : one()
+  const d = benchData<{ frames: CanFrame[] }>(r)
+  if (!d) return one()
+  if (!d.frames.length) return poll ? [] : [{ time, proto, tool, out: 'read', in: '', status: 'ok', note: 'no frames' }]
+  return d.frames.map((f) => ({
+    time,
+    proto,
+    tool,
+    out: '',
+    in: canFrameText(f.id, f.data, f.ext, f.rtr),
+    status: 'ok' as const,
+    note: `received at ${f.ts_ms} ms${f.fd ? `, FD${f.brs ? ' + BRS' : ''}` : ''}`,
+  }))
+}
+
+/** A BenchCall that also logs each call that is not a poll (and every CAN frame read, polled or not). */
 export function loggedCall(call: BenchCall, proto: BusProto, add: (row: Omit<BusLogRow, 'id'>) => void, only?: (tool: string) => boolean): BenchCall {
   return async (tool, args = {}, opts) => {
     const r = await call(tool, args, opts)
-    if (!opts?.poll && (!only || only(tool))) {
-      const { id: _id, ...row } = logRow(0, Date.now(), proto, tool, args, r)
-      add(row)
-    }
+    if (!only || only(tool)) for (const row of logRows(Date.now(), proto, tool, args, r, !!opts?.poll)) add(row)
     return r
   }
 }

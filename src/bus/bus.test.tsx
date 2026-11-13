@@ -6,8 +6,9 @@ import type { BenchCall, BenchResult } from '../bench/benchCall'
 import { BusDashboard } from './BusDashboard'
 import { I2cTab, parseHexBytes, parseI2cAddr } from './I2cTab'
 import { SpiTab } from './SpiTab'
+import { CanTab, canDataOk, parseCanId } from './CanTab'
 import { PinStrip, ownerLabel, pinWarnings, warnBits, type LaPin } from './PinStrip'
-import { logRow, loggedCall, nackWhere, type BusLogRow } from './busLog'
+import { logRow, logRows, loggedCall, nackWhere, type BusLogRow } from './busLog'
 
 beforeAll(() => {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as never
@@ -188,6 +189,46 @@ describe('SpiTab', () => {
   it('logs a transfer with what went out and came back', () => {
     const r = logRow(1, 0, 'SPI', 'spi_transfer', { tx_hex: '9f000000', mode: 3, cs: 6 }, ok({ rx_hex: 'ffef4018', hz: 1000000 }))
     expect(r).toMatchObject({ out: '9f 00 00 00 (mode 3, CS LA6)', in: 'ff ef 40 18', note: 'SCK 1 MHz', status: 'ok' })
+  })
+})
+
+describe('CanTab', () => {
+  it('parses ids and data lengths', () => {
+    expect(parseCanId('0x123', false)).toBe(0x123)
+    expect(parseCanId('0x800', false)).toBeNaN()
+    expect(parseCanId('0x18DAF110', true)).toBe(0x18daf110)
+    expect(canDataOk(8, false)).toBe(true)
+    expect(canDataOk(9, false)).toBe(false)
+    expect(canDataOk(64, true)).toBe(true)
+  })
+
+  it('opens, sends a frame and shows the pod error as is', async () => {
+    const { call, seen } = fake({
+      can_open: (a) => ok({ open: true, bitrate: a.bitrate, mode: a.mode, term: a.term, fd: false }),
+      can_write: () => err('CAN not open: call can_open first'),
+    })
+    wrap(<CanTab call={call} />)
+    fireEvent.click(screen.getByLabelText('120 ohm termination'))
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+    expect((await screen.findByTestId('can-session')).textContent).toBe('open: 500 kbit/s, on the bus, terminated')
+    expect(seen[0].args).toEqual({ bitrate: 500000, mode: 'normal', term: true })
+    fireEvent.change(screen.getByLabelText('ID'), { target: { value: '0x18daf110' } })
+    expect(screen.getByText('up to 0x7ff')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Extended (29-bit)'))
+    fireEvent.change(screen.getByLabelText('Data (hex)'), { target: { value: '02 01 0d' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(await screen.findByText('CAN not open: call can_open first')).toBeTruthy()
+    expect(seen[1]).toMatchObject({ tool: 'can_write', args: { can_id: 0x18daf110, data: [2, 1, 13], ext: true } })
+  })
+
+  it('logs one row per frame read, and nothing for a poll that read none', () => {
+    const frames = ok({ frames: [{ id: 0x7e8, data: [3, 0x41, 0x0d, 0x32], ext: false, rtr: false, ts_ms: 1200 }, { id: 0x18daf110, data: [], ext: true, rtr: true, ts_ms: 1210 }] })
+    const rows = logRows(0, 'CAN', 'can_read', { timeout: 0 }, frames, true)
+    expect(rows.map((r) => r.in)).toEqual(['0x7E8 [4] 03 41 0d 32', '0x18DAF110 ext RTR'])
+    expect(rows[0].note).toBe('received at 1200 ms')
+    expect(logRows(0, 'CAN', 'can_read', {}, ok({ frames: [] }), true)).toEqual([])
+    expect(logRows(0, 'CAN', 'can_read', {}, ok({ frames: [] }), false)[0].note).toBe('no frames')
+    expect(logRow(1, 0, 'CAN', 'can_write', { can_id: 0x123, data: [1, 2], ext: false }, ok({ queued: true })).out).toBe('0x123 [2] 01 02')
   })
 })
 

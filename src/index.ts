@@ -40,8 +40,9 @@ export { PinStrip, pinWarnings, warnBits, ownerLabel, WARN_PULL_UNDER_PUSH_PULL,
 export { I2cTab, parseI2cAddr, parseHexBytes } from './bus/I2cTab'
 export { GpioTab } from './bus/GpioTab'
 export { SpiTab, spiPinArgs } from './bus/SpiTab'
+export { CanTab, parseCanId, canDataOk } from './bus/CanTab'
 export { TransactionLog } from './bus/TransactionLog'
-export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
+export { logRow, logRows, loggedCall, canFrameText, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
 export { WiringEditor, WiringChannelMap } from './wiring/WiringEditor'
 export {
   effectiveWiring,
