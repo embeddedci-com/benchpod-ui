@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Alert, Button, Divider, Group, NumberInput, Select, Stack, Text } from '@mantine/core'
+import { Alert, Button, Checkbox, Divider, Group, NumberInput, Select, Stack, Text } from '@mantine/core'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { fmtSi } from './busLog'
+import type { SendCapture } from './sendCapture'
 
 // LA channels as GPIO, by hand: claim a pin (output, open drain, input), drive it, read it, pulse
 // it, wait for a level, release it. The tools are gpio_mode, gpio_write, gpio_read, gpio_pulse,
@@ -17,7 +18,18 @@ const MODES = [
   { value: 'input', label: 'Input' },
 ]
 
-export function GpioTab({ call, names, onChange }: { call: BenchCall; names?: string[]; onChange?: () => void }) {
+export function GpioTab({
+  call,
+  names,
+  sendCapture,
+  onChange,
+}: {
+  call: BenchCall
+  names?: string[]
+  /** Send and capture (the dashboard's): with it, Write 0 and Write 1 can capture the edge. */
+  sendCapture?: SendCapture
+  onChange?: () => void
+}) {
   const [la, setLa] = useState<string>('1')
   const [mode, setMode] = useState('output')
   const [widthMs, setWidthMs] = useState<number | ''>(1)
@@ -27,6 +39,7 @@ export function GpioTab({ call, names, onChange }: { call: BenchCall; names?: st
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | undefined>()
   const [result, setResult] = useState<string | null>(null)
+  const [capture, setCapture] = useState(false)
 
   const data = LA.map((o, i) => ({ ...o, label: names?.[i] ? `${o.label} ${names[i]}` : o.label }))
   const ch = Number(la)
@@ -57,6 +70,24 @@ export function GpioTab({ call, names, onChange }: { call: BenchCall; names?: st
   }
   const width = (Number(widthMs) || 0) / 1000
 
+  const write = async (level: 0 | 1) => {
+    if (!(capture && sendCapture)) {
+      await run(`w${level}`, 'gpio_write', { la: [ch], level })
+      return
+    }
+    setBusy(`w${level}`)
+    setError(undefined)
+    setResult(null)
+    try {
+      const o = await sendCapture({ bus: 'gpio', la: ch, level })
+      if (o.error) setError(o.error)
+      else if (o.send) setResult(`LA${ch} set to ${level}, captured`)
+    } finally {
+      setBusy(null)
+      onChange?.()
+    }
+  }
+
   return (
     <Stack gap="xs" p="sm">
       <Group gap="xs" align="flex-end" wrap="wrap">
@@ -70,18 +101,20 @@ export function GpioTab({ call, names, onChange }: { call: BenchCall; names?: st
         </Button>
       </Group>
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <Button size="xs" variant="light" onClick={() => void run('w0', 'gpio_write', { la: [ch], level: 0 })} loading={busy === 'w0'} disabled={!!busy}>
+        <Button size="xs" variant="light" onClick={() => void write(0)} loading={busy === 'w0'} disabled={!!busy}>
           Write 0
         </Button>
-        <Button size="xs" variant="light" onClick={() => void run('w1', 'gpio_write', { la: [ch], level: 1 })} loading={busy === 'w1'} disabled={!!busy}>
+        <Button size="xs" variant="light" onClick={() => void write(1)} loading={busy === 'w1'} disabled={!!busy}>
           Write 1
         </Button>
         <Button size="xs" variant="light" onClick={() => void read()} loading={busy === 'read'} disabled={!!busy}>
           Read
         </Button>
+        {sendCapture ? <Checkbox size="xs" label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={4} /> : null}
       </Group>
       <Text size="xs" c="dimmed">
         Open drain: 0 pulls the pin low, 1 lets it go. Read works on any pin, whatever owns it.
+        {capture && sendCapture ? ' Capture it: the pin must be an output already; the trace starts just before its edge.' : ''}
       </Text>
 
       <Divider label="Pulse" labelPosition="left" />

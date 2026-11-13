@@ -1,5 +1,6 @@
 import { benchData, type BenchCall, type BenchResult } from '../bench/benchCall'
 import { fmtSi as fmtSi3 } from '../results/AdcEnvelope'
+import type { SendResult } from './sendCapture'
 
 // The bus console's transaction log: one row per call from its tabs (I2C, GPIO, the console),
 // whatever the protocol. The rows are made from the tool, its arguments and its result, so every
@@ -21,6 +22,8 @@ export type BusLogRow = {
   status: BusStatus
   /** What the status means: "NACK on byte 2", the pod's error text, the rate the pod runs. */
   note?: string
+  /** Send and capture: the LA capture (its seq) the transaction is in. */
+  capture?: number
 }
 
 type I2cOpen = { open: boolean; sda?: number; scl?: number; hz?: number; pullups?: string }
@@ -54,9 +57,25 @@ export function nackWhere(nackAt: number | null | undefined, written: number): s
   return 'NACK on the read address'
 }
 
+/** A CAN frame as "0x123 01 02 03", with "ext" for a 29-bit id. */
+export function canFrameText(id: number, data: number[], ext: boolean, rtr = false): string {
+  const idText = `0x${id.toString(16).toUpperCase().padStart(ext ? 8 : 3, '0')}`
+  const bytes = data.map((b) => b.toString(16).padStart(2, '0')).join(' ')
+  return [idText, ext ? 'ext' : '', rtr ? 'RTR' : `[${data.length}]`, bytes].filter(Boolean).join(' ')
+}
+
+type CanFrame = { id: number; data: number[]; ext: boolean; rtr: boolean; fd?: boolean; brs?: boolean; ts_ms: number }
+
 /** What a call sent, for the log's "out" column. */
 function outText(tool: string, a: Record<string, unknown>): string {
   switch (tool) {
+    case 'capture_la': {
+      const s = (a.send ?? {}) as Record<string, unknown>
+      if (s.bus === 'i2c') return `${outText('i2c_transfer', { addr: s.addr, write_hex: s.write_hex, read: s.read })}, captured`
+      if (s.bus === 'spi') return `${outText('spi_transfer', { tx_hex: s.tx_hex, mode: s.spi_mode })}, captured`
+      if (s.bus === 'gpio') return `${outText('gpio_write', { la: s.la, level: s.level })}, captured`
+      return 'capture'
+    }
     case 'i2c_open':
       return `open SDA ${pins(a.sda ?? 'i2c_sda')} SCL ${pins(a.scl ?? 'i2c_scl')}, ${fmtSi(Number(a.hz ?? 100_000), 'Hz')}, ${a.pullups ?? 'pod'} pull-ups`
     case 'i2c_close':
@@ -86,6 +105,20 @@ function outText(tool: string, a: Record<string, unknown>): string {
       return `${pins(a.la)} wait for ${a.level ?? 1} (up to ${a.timeout ?? 5} s)`
     case 'gpio_release':
       return `release ${pins(a.la)}`
+    case 'spi_transfer': {
+      const pinsUsed = (['sck', 'mosi', 'miso', 'cs'] as const).filter((k) => a[k] !== undefined).map((k) => `${k.toUpperCase()} ${pins(a[k])}`)
+      return `${spacedHex(String(a.tx_hex ?? ''))} (mode ${a.mode ?? 0}${pinsUsed.length ? `, ${pinsUsed.join(' ')}` : ''})`
+    }
+    case 'can_open':
+      return `open ${fmtSi(Number(a.bitrate ?? 500_000), 'bit/s')}${a.data_bitrate ? `, data ${fmtSi(Number(a.data_bitrate), 'bit/s')}` : ''}, ${a.mode ?? 'normal'}${a.term ? ', 120 ohm' : ''}`
+    case 'can_close':
+      return 'close'
+    case 'can_status':
+      return 'status'
+    case 'can_read':
+      return 'read'
+    case 'can_write':
+      return canFrameText(Number(a.can_id), Array.isArray(a.data) ? (a.data as number[]) : [], !!a.ext)
     case 'uart_write':
       return `${String(a.text ?? '')}${a.line_ending === 'crlf' ? '\\r\\n' : a.line_ending === 'none' ? '' : '\\n'}`
     case 'uart_open':
@@ -119,6 +152,42 @@ export function logRow(id: number, time: number, proto: BusProto, tool: string, 
       if (!d.ack) row.note = nackWhere(d.nack_at, written)
       return row
     }
+    case 'capture_la': {
+      const d = benchData<{ samples: number; sample_rate_hz: number; trigger?: string | null; send?: SendResult | null }>(r)
+      const sent = d?.send
+      if (!d || !sent) return row
+      const capt = `${d.samples.toLocaleString('en-US')} samples at ${fmtSi(d.sample_rate_hz, 'S/s')}${d.trigger ? `, trigger ${d.trigger}` : ''}`
+      if (sent.error) return { ...row, status: 'error', note: `${sent.error} (${capt})` }
+      row.in = spacedHex(sent.rx_hex)
+      if (sent.bus === 'i2c' && sent.ack !== null && sent.ack !== undefined) {
+        row.status = sent.ack ? 'ack' : 'nack'
+        const written = String((args.send as { write_hex?: string } | undefined)?.write_hex ?? '').length / 2
+        row.note = sent.ack ? capt : `${nackWhere(sent.nack_at, written)} (${capt})`
+      } else row.note = capt
+      return row
+    }
+    case 'spi_transfer': {
+      const d = benchData<{ rx_hex: string; hz: number }>(r)
+      if (!d) return row
+      row.in = spacedHex(d.rx_hex)
+      row.note = `SCK ${fmtSi(d.hz, 'Hz')}`
+      return row
+    }
+    case 'can_open': {
+      const d = benchData<{ open: boolean; fd?: boolean }>(r)
+      if (d?.fd) row.note = 'CAN FD'
+      return row
+    }
+    case 'can_status': {
+      const d = benchData<{ reply?: Record<string, unknown> }>(r)
+      if (d?.reply) row.in = Object.entries(d.reply).map(([k, v]) => `${k} ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(', ')
+      return row
+    }
+    case 'can_write': {
+      const d = benchData<{ dlc?: number | null; fd?: boolean | null }>(r)
+      if (d?.fd) row.note = 'CAN FD'
+      return row
+    }
     case 'i2c_scan': {
       const d = benchData<I2cScan>(r)
       if (!d) return row
@@ -146,14 +215,35 @@ export function logRow(id: number, time: number, proto: BusProto, tool: string, 
   }
 }
 
-/** A BenchCall that also logs each call that is not a poll. */
+/**
+ * The log rows for a call: one, except can_read, which gives a row per frame it read (none for a
+ * poll that read nothing, so "Keep reading" only logs what came in).
+ */
+export function logRows(time: number, proto: BusProto, tool: string, args: Record<string, unknown>, r: BenchResult, poll = false): Omit<BusLogRow, 'id'>[] {
+  const one = (): Omit<BusLogRow, 'id'>[] => {
+    const { id: _id, ...row } = logRow(0, time, proto, tool, args, r)
+    return [row]
+  }
+  if (tool !== 'can_read') return poll ? [] : one()
+  const d = benchData<{ frames: CanFrame[] }>(r)
+  if (!d) return one()
+  if (!d.frames.length) return poll ? [] : [{ time, proto, tool, out: 'read', in: '', status: 'ok', note: 'no frames' }]
+  return d.frames.map((f) => ({
+    time,
+    proto,
+    tool,
+    out: '',
+    in: canFrameText(f.id, f.data, f.ext, f.rtr),
+    status: 'ok' as const,
+    note: `received at ${f.ts_ms} ms${f.fd ? `, FD${f.brs ? ' + BRS' : ''}` : ''}`,
+  }))
+}
+
+/** A BenchCall that also logs each call that is not a poll (and every CAN frame read, polled or not). */
 export function loggedCall(call: BenchCall, proto: BusProto, add: (row: Omit<BusLogRow, 'id'>) => void, only?: (tool: string) => boolean): BenchCall {
   return async (tool, args = {}, opts) => {
     const r = await call(tool, args, opts)
-    if (!opts?.poll && (!only || only(tool))) {
-      const { id: _id, ...row } = logRow(0, Date.now(), proto, tool, args, r)
-      add(row)
-    }
+    if (!only || only(tool)) for (const row of logRows(Date.now(), proto, tool, args, r, !!opts?.poll)) add(row)
     return r
   }
 }

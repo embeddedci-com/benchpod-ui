@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Divider, Group, NumberInput, SegmentedControl, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Button, Checkbox, Divider, Group, NumberInput, SegmentedControl, Select, Stack, Switch, Text, TextInput } from '@mantine/core'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { fmtSi, hex2, nackWhere, spacedHex } from './busLog'
+import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
+import type { SendAgainRequest } from './sendAgain'
+import { DeviceRegs } from './DeviceRegs'
 
 // The pod as I2C master on two LA pins: open a session (pins, speed, pull-ups), send a write, a
 // read or both, scan the bus, close. The tools are i2c_open, i2c_transfer, i2c_scan, i2c_close;
@@ -38,12 +41,21 @@ export function I2cTab({
   call,
   wiredSda,
   wiredScl,
+  sendCapture,
+  fill,
+  onFilled,
   onChange,
 }: {
   call: BenchCall
   /** The wiring's i2c_sda and i2c_scl channels, the default pins. */
   wiredSda?: number | null
   wiredScl?: number | null
+  /** Send and capture (the dashboard's): with it, a "Capture it" box sits next to Send. */
+  sendCapture?: SendCapture
+  /** Send again from the trace: fill the send box with this (and send it when `now`). */
+  fill?: (SendAgainRequest & { bus: 'i2c' }) | null
+  /** The fill was taken (so a remount does not take it again). */
+  onFilled?: () => void
   /** A call ran that may have changed the pins. */
   onChange?: () => void
 }) {
@@ -57,6 +69,8 @@ export function I2cTab({
   const [read, setRead] = useState<number | ''>(0)
   const [last, setLast] = useState<Xfer | null>(null)
   const [found, setFound] = useState<Scan | null>(null)
+  const [capture, setCapture] = useState(false)
+  const [device, setDevice] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | undefined>()
 
@@ -100,12 +114,45 @@ export function I2cTab({
   const n = Number(read) || 0
   const addrBad = addr.trim() !== '' && Number.isNaN(a)
   const writeBad = w === null || (w?.length ?? 0) > 256
-  const send = async () => {
+  const capturing = capture && !!sendCapture
+  const tooLong = capturing && (w?.length ?? 0) / 2 > SEND_MAX_BYTES
+  const readTooLong = capturing && n > SEND_MAX_BYTES
+  const send = () => sendWith(a, w, n)
+  const sendWith = async (a: number, w: string | null, n: number) => {
     if (Number.isNaN(a) || w === null) return
     setLast(null)
+    if (capturing && sendCapture) {
+      setBusy('send')
+      setError(undefined)
+      try {
+        const sda0 = session?.open ? session.sda : sda ? Number(sda) : undefined
+        const scl0 = session?.open ? session.scl : scl ? Number(scl) : undefined
+        const decode = sda0 && scl0 ? { protocol: 'i2c', sda: sda0, scl: scl0 } : undefined
+        const o = await sendCapture({ bus: 'i2c', addr: a, write_hex: w, read: n }, { hz: session?.open ? session.hz : Number(hz), decode })
+        if (o.error) setError(o.error)
+        if (o.send && !o.send.error) setLast({ addr: a, ack: !!o.send.ack, rx_hex: o.send.rx_hex, nack_at: o.send.nack_at, written: w.length / 2 })
+      } finally {
+        setBusy(null)
+        onChange?.()
+      }
+      return
+    }
     const r = await run<Xfer>('send', 'i2c_transfer', { addr: a, write_hex: w, read: n })
     if (r) setLast({ ...r, written: w.length / 2 })
   }
+  // Send again: take the fill once, then tell the dashboard it is taken.
+  useEffect(() => {
+    if (!fill) return
+    setDevice(false)
+    setAddr(hex2(fill.addr))
+    setWrite(spacedHex(fill.write_hex))
+    setRead(fill.read)
+    onFilled?.()
+    if (fill.now) void sendWith(fill.addr, fill.write_hex, fill.read)
+    // only a new fill matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fill])
+
   const scan = async () => {
     setFound(null)
     const r = await run<Scan>('scan', 'i2c_scan', {})
@@ -170,41 +217,60 @@ export function I2cTab({
         </Text>
       ) : null}
 
-      <Divider label="Send" labelPosition="left" />
-      <Group gap="xs" align="flex-end" wrap="wrap">
-        <TextInput size="xs" w={84} label="Address" placeholder="0x48" value={addr} onChange={(e) => setAddr(e.currentTarget.value)} error={addrBad ? '7-bit, e.g. 0x48' : undefined} />
-        <TextInput
-          size="xs"
-          style={{ flex: 1, minWidth: 160 }}
-          label="Write (hex)"
-          placeholder="e.g. 0f, a register"
-          value={write}
-          onChange={(e) => setWrite(e.currentTarget.value)}
-          error={writeBad ? 'whole bytes, up to 128' : undefined}
-          ff="monospace"
-        />
-        <NumberInput size="xs" w={84} label="Read bytes" value={read} onChange={(v) => setRead(typeof v === 'number' ? v : '')} min={0} max={248} />
-        <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || Number.isNaN(a) || writeBad}>
-          Send
-        </Button>
-        <Button size="xs" variant="light" onClick={() => void scan()} loading={busy === 'scan'} disabled={!!busy}>
-          Scan
-        </Button>
+      <Group gap="xs" wrap="nowrap">
+        <Divider label={device ? 'Device' : 'Send'} labelPosition="left" style={{ flex: 1 }} />
+        <Switch size="xs" label="Device mode" checked={device} onChange={(e) => setDevice(e.currentTarget.checked)} />
       </Group>
-      <Text size="xs" c="dimmed">
-        Write only, read only, or a write then a read (a repeated START). Neither: a probe of the address.
-      </Text>
-      {last ? (
-        <Text size="xs" ff="monospace" c={last.ack ? 'teal' : 'orange'} data-testid="i2c-result">
-          {hex2(last.addr)} {last.ack ? 'ACK' : nackWhere(last.nack_at, last.written ?? 0)}
-          {last.rx_hex ? `: ${spacedHex(last.rx_hex)}` : ''}
-        </Text>
-      ) : null}
-      {found ? (
-        <Text size="xs" ff="monospace" data-testid="i2c-scan">
-          {found.found.length ? `found ${(found.found_hex ?? found.found.map(hex2)).join(' ')}` : 'no device answered'}
-        </Text>
-      ) : null}
+      {device ? <DeviceRegs bus="i2c" call={call} /> : null}
+      {device ? null : (
+        <>
+          <Group gap="xs" align="flex-end" wrap="wrap">
+            <TextInput size="xs" w={84} label="Address" placeholder="0x48" value={addr} onChange={(e) => setAddr(e.currentTarget.value)} error={addrBad ? '7-bit, e.g. 0x48' : undefined} />
+            <TextInput
+              size="xs"
+              style={{ flex: 1, minWidth: 160 }}
+              label="Write (hex)"
+              placeholder="e.g. 0f, a register"
+              value={write}
+              onChange={(e) => setWrite(e.currentTarget.value)}
+              error={writeBad ? 'whole bytes, up to 128' : tooLong ? `up to ${SEND_MAX_BYTES} bytes with a capture` : undefined}
+              ff="monospace"
+            />
+            <NumberInput
+              size="xs"
+              w={84}
+              label="Read bytes"
+              value={read}
+              onChange={(v) => setRead(typeof v === 'number' ? v : '')}
+              min={0}
+              max={capturing ? SEND_MAX_BYTES : 248}
+              error={readTooLong ? `up to ${SEND_MAX_BYTES}` : undefined}
+            />
+            <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || Number.isNaN(a) || writeBad || tooLong || readTooLong}>
+              Send
+            </Button>
+            {sendCapture ? <Checkbox size="xs" label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={6} /> : null}
+            <Button size="xs" variant="light" onClick={() => void scan()} loading={busy === 'scan'} disabled={!!busy}>
+              Scan
+            </Button>
+          </Group>
+          <Text size="xs" c="dimmed">
+            Write only, read only, or a write then a read (a repeated START). Neither: a probe of the address.
+            {capturing ? ' Capture it: the trace above starts just before SDA falls and decodes the transaction.' : ''}
+          </Text>
+          {last ? (
+            <Text size="xs" ff="monospace" c={last.ack ? 'teal' : 'orange'} data-testid="i2c-result">
+              {hex2(last.addr)} {last.ack ? 'ACK' : nackWhere(last.nack_at, last.written ?? 0)}
+              {last.rx_hex ? `: ${spacedHex(last.rx_hex)}` : ''}
+            </Text>
+          ) : null}
+          {found ? (
+            <Text size="xs" ff="monospace" data-testid="i2c-scan">
+              {found.found.length ? `found ${(found.found_hex ?? found.found.map(hex2)).join(' ')}` : 'no device answered'}
+            </Text>
+          ) : null}
+        </>
+      )}
 
       {error ? (
         <Alert color="red" variant="light" p="xs" withCloseButton onClose={() => setError(undefined)}>

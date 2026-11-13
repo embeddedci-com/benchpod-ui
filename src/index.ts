@@ -33,14 +33,21 @@ export {
   type DecodeSegment,
   type UartFrame,
   type SpiFrame,
+  type DecodeRowActions,
 } from './capture/DecodeTables'
 export { CaptureView, type FetchCapture, type LaCaptureData, type AdcCaptureData, type DecodeData } from './capture/CaptureView'
 export { BusDashboard } from './bus/BusDashboard'
 export { PinStrip, pinWarnings, warnBits, ownerLabel, WARN_PULL_UNDER_PUSH_PULL, WARN_UNPOWERED_DUT, type LaPin, type LaPins } from './bus/PinStrip'
 export { I2cTab, parseI2cAddr, parseHexBytes } from './bus/I2cTab'
 export { GpioTab } from './bus/GpioTab'
+export { SpiTab, spiPinArgs } from './bus/SpiTab'
+export { CanTab, parseCanId, canDataOk } from './bus/CanTab'
 export { TransactionLog } from './bus/TransactionLog'
-export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
+export { captureArgs, type SendSpec, type SendResult, type SendCapture, type SendCaptureOutcome } from './bus/sendCapture'
+export { DeviceRegs, type SpiTransfer } from './bus/DeviceRegs'
+export { parseDevice, decodeValue, encodeValue, i2cRegHex, spiCmd, spiReadHex, spiReadValue, spiWriteHex, type DeviceDef, type DeviceReg, type FieldType } from './bus/device'
+export { i2cSendAgain, spiBursts, type SendAgain, type SendAgainRequest } from './bus/sendAgain'
+export { logRow, logRows, loggedCall, canFrameText, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
 export { WiringEditor, WiringChannelMap } from './wiring/WiringEditor'
 export {
   effectiveWiring,

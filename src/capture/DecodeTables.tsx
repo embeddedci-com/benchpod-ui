@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Badge, Box, Table, Text, Tooltip } from '@mantine/core'
 
 // Decode results as tables, shared by the web app's Capture tab and the desktop app. The shapes
@@ -29,6 +30,12 @@ export type DecodeTransaction = {
 
 export type UartFrame = { index: number; start_us: number; end_us: number; value: number; hex: string; text: string; ok: boolean; error?: string }
 export type SpiFrame = { index: number; start_us: number; end_us: number; mosi: number; miso: number; mosi_hex: string; miso_hex: string }
+
+/** Extra controls at the end of a decode row (the bus console's Send again); none: no column. */
+export type DecodeRowActions = {
+  i2c?: (t: DecodeTransaction) => ReactNode
+  spi?: (f: SpiFrame, all: SpiFrame[]) => ReactNode
+}
 
 export type DecodeResult =
   | { protocol: 'i2c'; transactions: DecodeTransaction[] }
@@ -73,7 +80,15 @@ function Status({ ok, label, tip }: { ok: boolean; label: string; tip?: string }
 }
 
 /** One decoded I2C transaction per row (address / direction / register / data / status). */
-export function I2cTable({ transactions, accent = DECODE_ACCENT.i2c }: { transactions: DecodeTransaction[]; accent?: string }) {
+export function I2cTable({
+  transactions,
+  accent = DECODE_ACCENT.i2c,
+  rowAction,
+}: {
+  transactions: DecodeTransaction[]
+  accent?: string
+  rowAction?: DecodeRowActions['i2c']
+}) {
   return (
     <Frame accent={accent} minWidth={560}>
       <Table {...tableProps}>
@@ -85,6 +100,7 @@ export function I2cTable({ transactions, accent = DECODE_ACCENT.i2c }: { transac
             <Table.Th style={{ width: 90 }}>Register</Table.Th>
             <Table.Th>Data</Table.Th>
             <Table.Th style={{ width: 120 }}>Status</Table.Th>
+            {rowAction ? <Table.Th style={{ width: 120 }} /> : null}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -104,6 +120,7 @@ export function I2cTable({ transactions, accent = DECODE_ACCENT.i2c }: { transac
                 <Table.Td ff="monospace">{t.register ?? EMPTY}</Table.Td>
                 <Table.Td ff="monospace">{data || EMPTY}</Table.Td>
                 <Table.Td>{t.ok ? <Status ok label="ACK" /> : <Status ok={false} label={t.error_kind ?? 'ERR'} tip={t.error ?? t.error_kind} />}</Table.Td>
+                {rowAction ? <Table.Td>{rowAction(t)}</Table.Td> : null}
               </Table.Tr>
             )
           })}
@@ -148,7 +165,7 @@ export function UartTable({ frames, accent = DECODE_ACCENT.uart }: { frames: Uar
 }
 
 /** One decoded SPI word per row (time / MOSI / MISO, clocked together). */
-export function SpiTable({ frames, accent = DECODE_ACCENT.spi }: { frames: SpiFrame[]; accent?: string }) {
+export function SpiTable({ frames, accent = DECODE_ACCENT.spi, rowAction }: { frames: SpiFrame[]; accent?: string; rowAction?: DecodeRowActions['spi'] }) {
   return (
     <Frame accent={accent} minWidth={400}>
       <Table {...tableProps}>
@@ -158,6 +175,7 @@ export function SpiTable({ frames, accent = DECODE_ACCENT.spi }: { frames: SpiFr
             <Table.Th style={{ width: 110 }}>Time</Table.Th>
             <Table.Th style={{ width: 120 }}>MOSI</Table.Th>
             <Table.Th style={{ width: 120 }}>MISO</Table.Th>
+            {rowAction ? <Table.Th style={{ width: 120 }} /> : null}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -177,6 +195,7 @@ export function SpiTable({ frames, accent = DECODE_ACCENT.spi }: { frames: SpiFr
                   ({f.miso})
                 </Text>
               </Table.Td>
+              {rowAction ? <Table.Td>{rowAction(f, frames)}</Table.Td> : null}
             </Table.Tr>
           ))}
         </Table.Tbody>
@@ -186,10 +205,10 @@ export function SpiTable({ frames, accent = DECODE_ACCENT.spi }: { frames: SpiFr
 }
 
 /** The decode as the right table. */
-export function DecodeTable({ result }: { result: DecodeResult }) {
-  if (result.protocol === 'i2c') return <I2cTable transactions={result.transactions} />
+export function DecodeTable({ result, actions }: { result: DecodeResult; actions?: DecodeRowActions }) {
+  if (result.protocol === 'i2c') return <I2cTable transactions={result.transactions} rowAction={actions?.i2c} />
   if (result.protocol === 'uart') return <UartTable frames={result.frames} />
-  return <SpiTable frames={result.frames} />
+  return <SpiTable frames={result.frames} rowAction={actions?.spi} />
 }
 
 /** The chips a decode puts on the waveform: each value on the LA channel that carried it. */
