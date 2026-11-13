@@ -8,6 +8,8 @@ import { GpioTab } from './GpioTab'
 import { SpiTab } from './SpiTab'
 import { CanTab } from './CanTab'
 import { TransactionLog } from './TransactionLog'
+import { SequencesPanel } from './sequences/SequencesPanel'
+import { stepsFromRows, toolProto, type SequenceStore } from './sequences/model'
 import { logRow, loggedCall, type BusLogRow, type BusProto } from './busLog'
 import { captureArgs, type SendCapture, type SendResult } from './sendCapture'
 import { i2cSendAgain, spiBursts, type SendAgain, type SendAgainRequest } from './sendAgain'
@@ -29,6 +31,7 @@ export function BusDashboard({
   refreshKey,
   renderConsole,
   initialTab = 'i2c',
+  sequences,
 }: {
   call: BenchCall
   fetchCapture: FetchCapture
@@ -37,7 +40,10 @@ export function BusDashboard({
   /** The host's console terminal (ConsoleTerminal) for the Console tab, given a logging BenchCall. */
   renderConsole?: (call: BenchCall) => ReactNode
   initialTab?: string
+  /** Where saved sequences are kept (embeddedci.com or a local file); without it the log has no selection. */
+  sequences?: SequenceStore
 }) {
+  const [picked, setPicked] = useState<Set<number>>(() => new Set())
   const [tab, setTab] = useState<string>(initialTab)
   const [rows, setRows] = useState<BusLogRow[]>([])
   const [wiring, setWiring] = useState<Wiring | null>(null)
@@ -178,7 +184,25 @@ export function BusDashboard({
           </Tabs>
         </Paper>
         <Stack gap={4}>
-          <TransactionLog rows={rows} onClear={() => setRows([])} onShowCapture={(seq) => void showCapture(seq)} />
+          <TransactionLog
+            rows={rows}
+            onClear={() => {
+              setRows([])
+              setPicked(new Set())
+            }}
+            onShowCapture={(seq) => void showCapture(seq)}
+            selected={sequences ? picked : undefined}
+            onToggle={sequences ? (id) => setPicked((p) => (p.has(id) ? new Set([...p].filter((x) => x !== id)) : new Set([...p, id]))) : undefined}
+          />
+          {sequences ? (
+            <SequencesPanel
+              store={sequences}
+              call={(tool, args, opts) => calls[toolProto(tool, args)](tool, args, opts)}
+              selected={stepsFromRows(rows, picked)}
+              onClearSelection={() => setPicked(new Set())}
+              names={names}
+            />
+          ) : null}
         </Stack>
       </Stack>
     </Stack>
