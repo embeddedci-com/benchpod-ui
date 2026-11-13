@@ -24,6 +24,9 @@ export type BusLogRow = {
   note?: string
   /** Send and capture: the LA capture (its seq) the transaction is in. */
   capture?: number
+  /** The call's arguments and structured result: what a saved sequence replays and checks. */
+  args?: Record<string, unknown>
+  data?: unknown
 }
 
 type I2cOpen = { open: boolean; sda?: number; scl?: number; hz?: number; pullups?: string }
@@ -132,7 +135,7 @@ function outText(tool: string, a: Record<string, unknown>): string {
 
 /** One log row for a call and its result. */
 export function logRow(id: number, time: number, proto: BusProto, tool: string, args: Record<string, unknown>, r: BenchResult): BusLogRow {
-  const row: BusLogRow = { id, time, proto, tool, out: outText(tool, args), in: '', status: 'ok' }
+  const row: BusLogRow = { id, time, proto, tool, out: outText(tool, args), in: '', status: 'ok', args, data: benchData(r) }
   if (r.declined) return { ...row, status: 'declined', note: r.text || 'not run' }
   if (r.is_error || r.refused) return { ...row, status: 'error', note: r.text || 'the call failed' }
   if (r.confirm) return { ...row, status: 'declined', note: 'waits for a yes' }
