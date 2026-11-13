@@ -7,6 +7,7 @@ import { BusDashboard } from './BusDashboard'
 import { I2cTab, parseHexBytes, parseI2cAddr } from './I2cTab'
 import { SpiTab } from './SpiTab'
 import { CanTab, canDataOk, parseCanId } from './CanTab'
+import { captureArgs } from './sendCapture'
 import { PinStrip, ownerLabel, pinWarnings, warnBits, type LaPin } from './PinStrip'
 import { logRow, logRows, loggedCall, nackWhere, type BusLogRow } from './busLog'
 
@@ -254,5 +255,64 @@ describe('BusDashboard', () => {
     expect(oldest.textContent).toContain('scan 0x08..0x77')
     expect(oldest.textContent).toContain('0x76')
     expect(oldest.textContent).toContain('I2C')
+  })
+})
+
+describe('send and capture', () => {
+  it('sizes the capture for the transaction', () => {
+    const i2c = captureArgs({ bus: 'i2c', addr: 0x76, write_hex: 'd0', read: 1 }, 100_000)
+    expect(i2c).toMatchObject({ sample_rate_hz: 1_000_000, trigger_timeout: 2 })
+    expect(i2c.samples).toBeGreaterThanOrEqual(2048)
+    const spi = captureArgs({ bus: 'spi', tx_hex: '9f000000', spi_mode: 0, spi_hz: 6_000_000 })
+    expect(spi.sample_rate_hz).toBe(48_000_000)
+    const long = captureArgs({ bus: 'i2c', addr: 0x50, write_hex: '00'.repeat(32), read: 32 }, 100_000)
+    expect(long.samples).toBeGreaterThan(9000)
+    expect(captureArgs({ bus: 'gpio', la: 3, level: 1 })).toMatchObject({ samples: 2064, sample_rate_hz: 1_000_000, send: { bus: 'gpio', la: 3, level: 1 } })
+  })
+
+  it('logs the send with the capture and points at it in the trace', async () => {
+    let seq = 7
+    const { call, seen } = fake({
+      wiring: () => ok({ pins: [{ la: 1, wired_to: 'i2c_sda' }, { la: 2, wired_to: 'i2c_scl' }] }),
+      la_pins: () => ok(pins()),
+      capture_la: () => ok({ samples: 2112, sample_rate_hz: 1e6, trigger: 'LA1 falling', pre_samples: 64, channels: [], send: { bus: 'i2c', ack: true, rx_hex: '60', nack_at: null } }),
+      decode_la: () => ok({ protocol: 'i2c', transactions: 1 }),
+    })
+    const fetchCapture = vi.fn(async (kind: string) => (kind === 'la' ? { seq, sample_rate_hz: 1e6, count: 2112, edges: [] } : { seq: 0 })) as never
+    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} />)
+    fireEvent.change(await screen.findByLabelText('Address'), { target: { value: '0x76' } })
+    fireEvent.change(screen.getByLabelText('Write (hex)'), { target: { value: 'd0' } })
+    fireEvent.change(screen.getByLabelText('Read bytes'), { target: { value: '1' } })
+    fireEvent.click(screen.getByLabelText('Capture it'))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect((await screen.findByTestId('i2c-result')).textContent).toBe('0x76 ACK: 60')
+    const cap = seen.find((x) => x.tool === 'capture_la')!
+    expect(cap.args.send).toEqual({ bus: 'i2c', addr: 0x76, write_hex: 'd0', read: 1 })
+    expect(cap.args.trigger_la).toBeUndefined()
+    expect(seen.find((x) => x.tool === 'decode_la')?.args).toEqual({ protocol: 'i2c', sda: 1, scl: 2, capture: 'last', max_items: 1 })
+    expect(seen.some((x) => x.tool === 'i2c_transfer')).toBe(false)
+
+    const log = await screen.findByTestId('bus-log')
+    const row = within(log).getAllByRole('row')[1]
+    expect(row.textContent).toContain('0x76 W d0 R 1, captured')
+    expect(row.textContent).toContain('2,112 samples at 1 MS/s, trigger LA1 falling')
+    fireEvent.click(within(row).getByRole('button', { name: 'Trace' }))
+    await waitFor(() => expect(screen.queryByTestId('trace-note')).toBeNull())
+    seq = 8
+    fireEvent.click(within(row).getByRole('button', { name: 'Trace' }))
+    expect((await screen.findByTestId('trace-note')).textContent).toContain('A newer capture replaced')
+  })
+
+  it('a send that fails inside the capture shows its error', async () => {
+    const { call } = fake({
+      wiring: () => ok({ pins: [] }),
+      la_pins: () => ok(pins()),
+      capture_la: () => ok({ samples: 2048, sample_rate_hz: 1e6, channels: [], send: { bus: 'gpio', error: 'gpio send: LA3 is not a GPIO output' } }),
+    })
+    const fetchCapture = (async () => ({ seq: 3, sample_rate_hz: 1e6, count: 2048, edges: [] })) as never
+    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
+    fireEvent.click(await screen.findByLabelText('Capture it'))
+    fireEvent.click(screen.getByRole('button', { name: 'Write 1' }))
+    expect(await screen.findAllByText(/gpio send: LA3 is not a GPIO output/)).toHaveLength(2)
   })
 })

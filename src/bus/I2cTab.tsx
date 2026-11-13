@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Divider, Group, NumberInput, SegmentedControl, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Button, Checkbox, Divider, Group, NumberInput, SegmentedControl, Select, Stack, Text, TextInput } from '@mantine/core'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { fmtSi, hex2, nackWhere, spacedHex } from './busLog'
+import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
 
 // The pod as I2C master on two LA pins: open a session (pins, speed, pull-ups), send a write, a
 // read or both, scan the bus, close. The tools are i2c_open, i2c_transfer, i2c_scan, i2c_close;
@@ -38,12 +39,15 @@ export function I2cTab({
   call,
   wiredSda,
   wiredScl,
+  sendCapture,
   onChange,
 }: {
   call: BenchCall
   /** The wiring's i2c_sda and i2c_scl channels, the default pins. */
   wiredSda?: number | null
   wiredScl?: number | null
+  /** Send and capture (the dashboard's): with it, a "Capture it" box sits next to Send. */
+  sendCapture?: SendCapture
   /** A call ran that may have changed the pins. */
   onChange?: () => void
 }) {
@@ -57,6 +61,7 @@ export function I2cTab({
   const [read, setRead] = useState<number | ''>(0)
   const [last, setLast] = useState<Xfer | null>(null)
   const [found, setFound] = useState<Scan | null>(null)
+  const [capture, setCapture] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | undefined>()
 
@@ -100,9 +105,28 @@ export function I2cTab({
   const n = Number(read) || 0
   const addrBad = addr.trim() !== '' && Number.isNaN(a)
   const writeBad = w === null || (w?.length ?? 0) > 256
+  const capturing = capture && !!sendCapture
+  const tooLong = capturing && (w?.length ?? 0) / 2 > SEND_MAX_BYTES
+  const readTooLong = capturing && n > SEND_MAX_BYTES
   const send = async () => {
     if (Number.isNaN(a) || w === null) return
     setLast(null)
+    if (capturing && sendCapture) {
+      setBusy('send')
+      setError(undefined)
+      try {
+        const sda0 = session?.open ? session.sda : sda ? Number(sda) : undefined
+        const scl0 = session?.open ? session.scl : scl ? Number(scl) : undefined
+        const decode = sda0 && scl0 ? { protocol: 'i2c', sda: sda0, scl: scl0 } : undefined
+        const o = await sendCapture({ bus: 'i2c', addr: a, write_hex: w, read: n }, { hz: session?.open ? session.hz : Number(hz), decode })
+        if (o.error) setError(o.error)
+        if (o.send && !o.send.error) setLast({ addr: a, ack: !!o.send.ack, rx_hex: o.send.rx_hex, nack_at: o.send.nack_at, written: w.length / 2 })
+      } finally {
+        setBusy(null)
+        onChange?.()
+      }
+      return
+    }
     const r = await run<Xfer>('send', 'i2c_transfer', { addr: a, write_hex: w, read: n })
     if (r) setLast({ ...r, written: w.length / 2 })
   }
@@ -180,19 +204,30 @@ export function I2cTab({
           placeholder="e.g. 0f, a register"
           value={write}
           onChange={(e) => setWrite(e.currentTarget.value)}
-          error={writeBad ? 'whole bytes, up to 128' : undefined}
+          error={writeBad ? 'whole bytes, up to 128' : tooLong ? `up to ${SEND_MAX_BYTES} bytes with a capture` : undefined}
           ff="monospace"
         />
-        <NumberInput size="xs" w={84} label="Read bytes" value={read} onChange={(v) => setRead(typeof v === 'number' ? v : '')} min={0} max={248} />
-        <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || Number.isNaN(a) || writeBad}>
+        <NumberInput
+          size="xs"
+          w={84}
+          label="Read bytes"
+          value={read}
+          onChange={(v) => setRead(typeof v === 'number' ? v : '')}
+          min={0}
+          max={capturing ? SEND_MAX_BYTES : 248}
+          error={readTooLong ? `up to ${SEND_MAX_BYTES}` : undefined}
+        />
+        <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || Number.isNaN(a) || writeBad || tooLong || readTooLong}>
           Send
         </Button>
+        {sendCapture ? <Checkbox size="xs" label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={6} /> : null}
         <Button size="xs" variant="light" onClick={() => void scan()} loading={busy === 'scan'} disabled={!!busy}>
           Scan
         </Button>
       </Group>
       <Text size="xs" c="dimmed">
         Write only, read only, or a write then a read (a repeated START). Neither: a probe of the address.
+        {capturing ? ' Capture it: the trace above starts just before SDA falls and decodes the transaction.' : ''}
       </Text>
       {last ? (
         <Text size="xs" ff="monospace" c={last.ack ? 'teal' : 'orange'} data-testid="i2c-result">

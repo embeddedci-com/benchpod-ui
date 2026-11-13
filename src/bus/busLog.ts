@@ -1,5 +1,6 @@
 import { benchData, type BenchCall, type BenchResult } from '../bench/benchCall'
 import { fmtSi as fmtSi3 } from '../results/AdcEnvelope'
+import type { SendResult } from './sendCapture'
 
 // The bus console's transaction log: one row per call from its tabs (I2C, GPIO, the console),
 // whatever the protocol. The rows are made from the tool, its arguments and its result, so every
@@ -21,6 +22,8 @@ export type BusLogRow = {
   status: BusStatus
   /** What the status means: "NACK on byte 2", the pod's error text, the rate the pod runs. */
   note?: string
+  /** Send and capture: the LA capture (its seq) the transaction is in. */
+  capture?: number
 }
 
 type I2cOpen = { open: boolean; sda?: number; scl?: number; hz?: number; pullups?: string }
@@ -66,6 +69,13 @@ type CanFrame = { id: number; data: number[]; ext: boolean; rtr: boolean; fd?: b
 /** What a call sent, for the log's "out" column. */
 function outText(tool: string, a: Record<string, unknown>): string {
   switch (tool) {
+    case 'capture_la': {
+      const s = (a.send ?? {}) as Record<string, unknown>
+      if (s.bus === 'i2c') return `${outText('i2c_transfer', { addr: s.addr, write_hex: s.write_hex, read: s.read })}, captured`
+      if (s.bus === 'spi') return `${outText('spi_transfer', { tx_hex: s.tx_hex, mode: s.spi_mode })}, captured`
+      if (s.bus === 'gpio') return `${outText('gpio_write', { la: s.la, level: s.level })}, captured`
+      return 'capture'
+    }
     case 'i2c_open':
       return `open SDA ${pins(a.sda ?? 'i2c_sda')} SCL ${pins(a.scl ?? 'i2c_scl')}, ${fmtSi(Number(a.hz ?? 100_000), 'Hz')}, ${a.pullups ?? 'pod'} pull-ups`
     case 'i2c_close':
@@ -140,6 +150,20 @@ export function logRow(id: number, time: number, proto: BusProto, tool: string, 
       row.in = spacedHex(d.rx_hex)
       row.status = d.ack ? 'ack' : 'nack'
       if (!d.ack) row.note = nackWhere(d.nack_at, written)
+      return row
+    }
+    case 'capture_la': {
+      const d = benchData<{ samples: number; sample_rate_hz: number; trigger?: string | null; send?: SendResult | null }>(r)
+      const sent = d?.send
+      if (!d || !sent) return row
+      const capt = `${d.samples.toLocaleString('en-US')} samples at ${fmtSi(d.sample_rate_hz, 'S/s')}${d.trigger ? `, trigger ${d.trigger}` : ''}`
+      if (sent.error) return { ...row, status: 'error', note: `${sent.error} (${capt})` }
+      row.in = spacedHex(sent.rx_hex)
+      if (sent.bus === 'i2c' && sent.ack !== null && sent.ack !== undefined) {
+        row.status = sent.ack ? 'ack' : 'nack'
+        const written = String((args.send as { write_hex?: string } | undefined)?.write_hex ?? '').length / 2
+        row.note = sent.ack ? capt : `${nackWhere(sent.nack_at, written)} (${capt})`
+      } else row.note = capt
       return row
     }
     case 'spi_transfer': {

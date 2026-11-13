@@ -18,7 +18,18 @@ function clock(ms: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`
 }
 
-export function TransactionLog({ rows, onClear, maxHeight = 260 }: { rows: BusLogRow[]; onClear: () => void; maxHeight?: number }) {
+export function TransactionLog({
+  rows,
+  onClear,
+  onShowCapture,
+  maxHeight = 260,
+}: {
+  rows: BusLogRow[]
+  onClear: () => void
+  /** A row from send and capture: show its capture in the trace. */
+  onShowCapture?: (seq: number) => void
+  maxHeight?: number
+}) {
   return (
     <>
       <Group justify="space-between" gap="xs">
@@ -65,6 +76,11 @@ export function TransactionLog({ rows, onClear, maxHeight = 260 }: { rows: BusLo
                         <Badge size="xs" variant="light" color={s.color} style={{ flexShrink: 0 }}>
                           {s.label}
                         </Badge>
+                        {r.capture && onShowCapture ? (
+                          <Button size="compact-xs" variant="light" onClick={() => onShowCapture(r.capture!)} style={{ flexShrink: 0 }}>
+                            Trace
+                          </Button>
+                        ) : null}
                         {r.note ? (
                           <Text size="xs" c={r.status === 'error' ? 'red' : 'dimmed'} style={{ whiteSpace: 'pre-wrap' }}>
                             {r.note}

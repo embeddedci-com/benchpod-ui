@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Divider, Group, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Button, Checkbox, Divider, Group, Select, Stack, Text, TextInput } from '@mantine/core'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { parseHexBytes } from './I2cTab'
 import { fmtSi, spacedHex } from './busLog'
+import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
 
 // The pod as SPI master on four LA pins: pins, mode, rate, then one full-duplex transfer per
 // Send (CS low for all the bytes). The tool is spi_transfer; it arms the SPI master for the call
@@ -41,11 +42,14 @@ export function spiPinArgs(p: SpiPins): Record<string, number> {
 export function SpiTab({
   call,
   wired,
+  sendCapture,
   onChange,
 }: {
   call: BenchCall
   /** The wiring's spi_sclk, spi_mosi, spi_miso and spi_cs channels, the default pins. */
   wired?: Partial<Record<keyof SpiPins, number | null>>
+  /** Send and capture (the dashboard's): with it, a "Capture it" box sits next to Send. */
+  sendCapture?: SendCapture
   onChange?: () => void
 }) {
   const [pins, setPins] = useState<SpiPins>({ sck: null, mosi: null, miso: null, cs: null })
@@ -53,6 +57,7 @@ export function SpiTab({
   const [hz, setHz] = useState('1000000')
   const [tx, setTx] = useState('')
   const [last, setLast] = useState<{ tx: string; rx: string; hz: number } | null>(null)
+  const [capture, setCapture] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | undefined>()
 
@@ -70,12 +75,27 @@ export function SpiTab({
   const n = (bytes?.length ?? 0) / 2
   const txBad = tx.trim() !== '' && (bytes === null || n > SPI_MAX_BYTES)
 
+  // A capture's send runs on the wiring's SPI pins (the MCP tool takes no pins for it).
+  const onWiring = (['sck', 'mosi', 'miso', 'cs'] as const).every((k) => !pins[k] || Number(pins[k]) === wired?.[k]) && !!wired?.sck && !!wired?.cs
+  const capturing = capture && !!sendCapture && onWiring
+  const tooLong = capturing && n > SEND_MAX_BYTES
+
   const send = async () => {
     if (!bytes) return
     setBusy('send')
     setError(undefined)
     setLast(null)
     try {
+      if (capturing && sendCapture) {
+        const decode: Record<string, unknown> = { protocol: 'spi', sclk: wired?.sck, mode: Number(mode) }
+        if (wired?.mosi) decode.mosi = wired.mosi
+        if (wired?.miso) decode.miso = wired.miso
+        if (wired?.cs) decode.cs = wired.cs
+        const o = await sendCapture({ bus: 'spi', tx_hex: bytes, spi_mode: Number(mode), spi_hz: Number(hz) }, { decode })
+        if (o.error) setError(o.error)
+        if (o.send && !o.send.error) setLast({ tx: bytes, rx: o.send.rx_hex ?? '', hz: 0 })
+        return
+      }
       const r = await call('spi_transfer', { tx_hex: bytes, ...spiPinArgs(pins), hz: Number(hz), mode: Number(mode) })
       const e = benchError(r)
       if (e) setError(e)
@@ -125,15 +145,28 @@ export function SpiTab({
           placeholder="e.g. 9f 00 00 00"
           value={tx}
           onChange={(e) => setTx(e.currentTarget.value)}
-          error={txBad ? `whole bytes, up to ${SPI_MAX_BYTES}` : undefined}
+          error={txBad ? `whole bytes, up to ${SPI_MAX_BYTES}` : tooLong ? `up to ${SEND_MAX_BYTES} bytes with a capture` : undefined}
           ff="monospace"
         />
-        <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || !bytes || txBad}>
+        <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || !bytes || txBad || tooLong}>
           Send
         </Button>
+        {sendCapture ? (
+          <Checkbox
+            size="xs"
+            label="Capture it"
+            checked={capture && onWiring}
+            disabled={!onWiring}
+            title={onWiring ? undefined : "A capture's send runs on the wiring's SPI pins: set them in the wiring, or clear the picks here."}
+            onChange={(e) => setCapture(e.currentTarget.checked)}
+            mb={6}
+          />
+        ) : null}
       </Group>
       <Text size="xs" c="dimmed">
         SPI clocks a byte in for every byte out: send 00 for each byte you want to read.
+        {sendCapture && !onWiring ? ' Capture it needs the wiring\'s SPI pins (SCK and CS at least).' : ''}
+        {capturing ? ' Capture it: the trace above starts just before CS falls and decodes the bytes.' : ''}
       </Text>
       {last ? (
         <Stack gap={0} data-testid="spi-result">
@@ -143,9 +176,11 @@ export function SpiTab({
           <Text size="xs" ff="monospace" c="teal">
             in&nbsp; {spacedHex(last.rx)}
           </Text>
-          <Text size="xs" c="dimmed">
-            the pod ran SCK at {fmtSi(last.hz, 'Hz')}
-          </Text>
+          {last.hz ? (
+            <Text size="xs" c="dimmed">
+              the pod ran SCK at {fmtSi(last.hz, 'Hz')}
+            </Text>
+          ) : null}
         </Stack>
       ) : null}
 

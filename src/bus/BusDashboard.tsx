@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Divider, Paper, Stack, Tabs } from '@mantine/core'
-import { benchData, type BenchCall } from '../bench/benchCall'
+import { Divider, Paper, Stack, Tabs, Text } from '@mantine/core'
+import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { CaptureView, type FetchCapture } from '../capture/CaptureView'
 import { PinStrip } from './PinStrip'
 import { I2cTab } from './I2cTab'
@@ -8,7 +8,8 @@ import { GpioTab } from './GpioTab'
 import { SpiTab } from './SpiTab'
 import { CanTab } from './CanTab'
 import { TransactionLog } from './TransactionLog'
-import { loggedCall, type BusLogRow, type BusProto } from './busLog'
+import { logRow, loggedCall, type BusLogRow, type BusProto } from './busLog'
+import { captureArgs, type SendCapture, type SendResult } from './sendCapture'
 
 // The bus console: one page to listen to and drive the DUT's buses. The capture controls and
 // the trace on top (CaptureView), the 14 LA pins in one row, and a dock with a tab per bus plus
@@ -58,9 +59,62 @@ export function BusDashboard({
   }, [call, add])
   const pinsChanged = useCallback(() => setPinsKey((k) => k + 1), [])
 
+  // Send and capture: capture_la with a send, decoded when the bus has a decoder, then the trace
+  // above reloads. The log row keeps the capture's seq, so it can point at the trace.
+  const [capKey, setCapKey] = useState(0)
+  const [traceNote, setTraceNote] = useState<string | null>(null)
+  const traceRef = useRef<HTMLDivElement>(null)
+  const sendCapture = useCallback(
+    (proto: BusProto): SendCapture =>
+      async (send, opts = {}) => {
+        const args = captureArgs(send, opts.hz)
+        const r = await call('capture_la', args)
+        const { id: _id, ...row } = logRow(0, Date.now(), proto, 'capture_la', args, r)
+        const error = benchError(r)
+        const data = benchData<{ send?: SendResult | null }>(r)
+        let seq: number | undefined
+        if (data) {
+          if (opts.decode) await call('decode_la', { ...opts.decode, capture: 'last', max_items: 1 })
+          try {
+            seq = (await fetchCapture('la')).seq || undefined
+          } catch {
+            seq = undefined
+          }
+          setCapKey((k) => k + 1)
+          setTraceNote(null)
+        }
+        add(seq ? { ...row, capture: seq } : row)
+        pinsChanged()
+        return { error: error ?? data?.send?.error ?? undefined, send: data?.send ?? undefined, declined: r.declined }
+      },
+    [call, fetchCapture, add, pinsChanged],
+  )
+  const senders = useMemo(() => ({ i2c: sendCapture('I2C'), spi: sendCapture('SPI'), gpio: sendCapture('GPIO') }), [sendCapture])
+
+  const showCapture = useCallback(
+    async (seq: number) => {
+      traceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      let now = 0
+      try {
+        now = (await fetchCapture('la')).seq
+      } catch {
+        now = 0
+      }
+      setTraceNote(now === seq ? null : 'A newer capture replaced that one in the trace.')
+    },
+    [fetchCapture],
+  )
+
   return (
     <Stack gap={0}>
-      <CaptureView call={call} fetchCapture={fetchCapture} refreshKey={refreshKey} />
+      <div ref={traceRef}>
+        <CaptureView call={call} fetchCapture={fetchCapture} refreshKey={`${String(refreshKey ?? '')}-${capKey}`} />
+        {traceNote ? (
+          <Text size="xs" c="orange" px="sm" pb="xs" data-testid="trace-note">
+            {traceNote}
+          </Text>
+        ) : null}
+      </div>
       <Divider />
       <Stack gap="sm" p="sm">
         <PinStrip call={call} names={names} refreshKey={`${pinsKey}-${String(refreshKey ?? '')}`} />
@@ -75,21 +129,21 @@ export function BusDashboard({
             </Tabs.List>
             <Tabs.Panel value="console">{renderConsole ? <div style={{ height: 360 }}>{renderConsole(calls.uart)}</div> : null}</Tabs.Panel>
             <Tabs.Panel value="i2c">
-              <I2cTab call={calls.i2c} wiredSda={wired('i2c_sda')} wiredScl={wired('i2c_scl')} onChange={pinsChanged} />
+              <I2cTab call={calls.i2c} wiredSda={wired('i2c_sda')} wiredScl={wired('i2c_scl')} sendCapture={senders.i2c} onChange={pinsChanged} />
             </Tabs.Panel>
             <Tabs.Panel value="spi">
-              <SpiTab call={calls.spi} wired={{ sck: wired('spi_sclk'), mosi: wired('spi_mosi'), miso: wired('spi_miso'), cs: wired('spi_cs') }} onChange={pinsChanged} />
+              <SpiTab call={calls.spi} wired={{ sck: wired('spi_sclk'), mosi: wired('spi_mosi'), miso: wired('spi_miso'), cs: wired('spi_cs') }} sendCapture={senders.spi} onChange={pinsChanged} />
             </Tabs.Panel>
             <Tabs.Panel value="can">
               <CanTab call={calls.can} />
             </Tabs.Panel>
             <Tabs.Panel value="gpio">
-              <GpioTab call={calls.gpio} names={names} onChange={pinsChanged} />
+              <GpioTab call={calls.gpio} names={names} sendCapture={senders.gpio} onChange={pinsChanged} />
             </Tabs.Panel>
           </Tabs>
         </Paper>
         <Stack gap={4}>
-          <TransactionLog rows={rows} onClear={() => setRows([])} />
+          <TransactionLog rows={rows} onClear={() => setRows([])} onShowCapture={(seq) => void showCapture(seq)} />
         </Stack>
       </Stack>
     </Stack>
