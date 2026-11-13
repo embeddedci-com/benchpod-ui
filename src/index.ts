@@ -15,6 +15,8 @@ export { ConsoleTerminal, type ConsoleLogEntry } from './bench/ConsoleTerminal'
 export { PodUpdate, newerVersion, type PodUpdater, type PodFirmwareInfo } from './bench/PodUpdate'
 export { FlashControls, type FirmwareFile, type FirmwareStore } from './bench/FlashControls'
 export { GeneratorControls, parseWaveformCsv, type WaveformLibrary, type WaveformMeta } from './bench/GeneratorControls'
+export { FaultControls, SegmentControls, LoopControls } from './bench/GeneratorExtras'
+export * from './bench/generatorMath'
 export { CaptureCanvas, useCanvasColors, type LaEdge, type LaneAnnotation, type DacTrack, type CanvasColors } from './capture/CaptureCanvas'
 export {
   DecodeTable,
