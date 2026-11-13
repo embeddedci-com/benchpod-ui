@@ -5,8 +5,12 @@ import { MantineProvider } from '@mantine/core'
 import type { BenchCall, BenchResult } from '../bench/benchCall'
 import { BusDashboard } from './BusDashboard'
 import { I2cTab, parseHexBytes, parseI2cAddr } from './I2cTab'
+import { SpiTab } from './SpiTab'
+import { CanTab, canDataOk, parseCanId } from './CanTab'
+import { captureArgs } from './sendCapture'
+import { i2cSendAgain, spiBursts } from './sendAgain'
 import { PinStrip, ownerLabel, pinWarnings, warnBits, type LaPin } from './PinStrip'
-import { logRow, loggedCall, nackWhere, type BusLogRow } from './busLog'
+import { logRow, logRows, loggedCall, nackWhere, type BusLogRow } from './busLog'
 
 beforeAll(() => {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as never
@@ -160,6 +164,76 @@ describe('I2cTab', () => {
   })
 })
 
+describe('SpiTab', () => {
+  it('sends on the wired pins and shows the bytes in and the rate the pod ran', async () => {
+    const { call, seen } = fake({ spi_transfer: () => ok({ rx_hex: 'ffef4018', hz: 937500 }) })
+    wrap(<SpiTab call={call} wired={{ sck: 3, mosi: 4, miso: 5, cs: 6 }} />)
+    fireEvent.change(screen.getByLabelText('Out (hex)'), { target: { value: '9f 00 00 00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    const res = await screen.findByTestId('spi-result')
+    expect(res.textContent).toContain('ff ef 40 18')
+    expect(res.textContent).toContain('938 kHz')
+    expect(seen[0].args).toEqual({ tx_hex: '9f000000', sck: 3, mosi: 4, miso: 5, cs: 6, hz: 1000000, mode: 0 })
+  })
+
+  it('shows the pod error for mode 2 on old gateware as is', async () => {
+    const msg = 'spi_master: mode 2 needs gateware v55+ (this pod runs v53)'
+    const { call, seen } = fake({ spi_transfer: () => err(msg) })
+    wrap(<SpiTab call={call} />)
+    fireEvent.click(screen.getByLabelText('Mode', { selector: 'input' }))
+    fireEvent.click(await screen.findByRole('option', { name: '2 (CPOL 1, CPHA 0)' }))
+    fireEvent.change(screen.getByLabelText('Out (hex)'), { target: { value: 'aa' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(await screen.findByText(msg)).toBeTruthy()
+    expect(seen[0].args).toEqual({ tx_hex: 'aa', hz: 1000000, mode: 2 })
+  })
+
+  it('logs a transfer with what went out and came back', () => {
+    const r = logRow(1, 0, 'SPI', 'spi_transfer', { tx_hex: '9f000000', mode: 3, cs: 6 }, ok({ rx_hex: 'ffef4018', hz: 1000000 }))
+    expect(r).toMatchObject({ out: '9f 00 00 00 (mode 3, CS LA6)', in: 'ff ef 40 18', note: 'SCK 1 MHz', status: 'ok' })
+  })
+})
+
+describe('CanTab', () => {
+  it('parses ids and data lengths', () => {
+    expect(parseCanId('0x123', false)).toBe(0x123)
+    expect(parseCanId('0x800', false)).toBeNaN()
+    expect(parseCanId('0x18DAF110', true)).toBe(0x18daf110)
+    expect(canDataOk(8, false)).toBe(true)
+    expect(canDataOk(9, false)).toBe(false)
+    expect(canDataOk(64, true)).toBe(true)
+  })
+
+  it('opens, sends a frame and shows the pod error as is', async () => {
+    const { call, seen } = fake({
+      can_open: (a) => ok({ open: true, bitrate: a.bitrate, mode: a.mode, term: a.term, fd: false }),
+      can_write: () => err('CAN not open: call can_open first'),
+    })
+    wrap(<CanTab call={call} />)
+    fireEvent.click(screen.getByLabelText('120 ohm termination'))
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+    expect((await screen.findByTestId('can-session')).textContent).toBe('open: 500 kbit/s, on the bus, terminated')
+    expect(seen[0].args).toEqual({ bitrate: 500000, mode: 'normal', term: true })
+    fireEvent.change(screen.getByLabelText('ID'), { target: { value: '0x18daf110' } })
+    expect(screen.getByText('up to 0x7ff')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Extended (29-bit)'))
+    fireEvent.change(screen.getByLabelText('Data (hex)'), { target: { value: '02 01 0d' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(await screen.findByText('CAN not open: call can_open first')).toBeTruthy()
+    expect(seen[1]).toMatchObject({ tool: 'can_write', args: { can_id: 0x18daf110, data: [2, 1, 13], ext: true } })
+  })
+
+  it('logs one row per frame read, and nothing for a poll that read none', () => {
+    const frames = ok({ frames: [{ id: 0x7e8, data: [3, 0x41, 0x0d, 0x32], ext: false, rtr: false, ts_ms: 1200 }, { id: 0x18daf110, data: [], ext: true, rtr: true, ts_ms: 1210 }] })
+    const rows = logRows(0, 'CAN', 'can_read', { timeout: 0 }, frames, true)
+    expect(rows.map((r) => r.in)).toEqual(['0x7E8 [4] 03 41 0d 32', '0x18DAF110 ext RTR'])
+    expect(rows[0].note).toBe('received at 1200 ms')
+    expect(logRows(0, 'CAN', 'can_read', {}, ok({ frames: [] }), true)).toEqual([])
+    expect(logRows(0, 'CAN', 'can_read', {}, ok({ frames: [] }), false)[0].note).toBe('no frames')
+    expect(logRow(1, 0, 'CAN', 'can_write', { can_id: 0x123, data: [1, 2], ext: false }, ok({ queued: true })).out).toBe('0x123 [2] 01 02')
+  })
+})
+
 describe('BusDashboard', () => {
   it('logs each call from the tabs, with ACK, NACK and errors', async () => {
     const { call } = fake({
@@ -182,5 +256,108 @@ describe('BusDashboard', () => {
     expect(oldest.textContent).toContain('scan 0x08..0x77')
     expect(oldest.textContent).toContain('0x76')
     expect(oldest.textContent).toContain('I2C')
+  })
+})
+
+describe('send and capture', () => {
+  it('sizes the capture for the transaction', () => {
+    const i2c = captureArgs({ bus: 'i2c', addr: 0x76, write_hex: 'd0', read: 1 }, 100_000)
+    expect(i2c).toMatchObject({ sample_rate_hz: 1_000_000, trigger_timeout: 2 })
+    expect(i2c.samples).toBeGreaterThanOrEqual(2048)
+    const spi = captureArgs({ bus: 'spi', tx_hex: '9f000000', spi_mode: 0, spi_hz: 6_000_000 })
+    expect(spi.sample_rate_hz).toBe(48_000_000)
+    const long = captureArgs({ bus: 'i2c', addr: 0x50, write_hex: '00'.repeat(32), read: 32 }, 100_000)
+    expect(long.samples).toBeGreaterThan(9000)
+    expect(captureArgs({ bus: 'gpio', la: 3, level: 1 })).toMatchObject({ samples: 2064, sample_rate_hz: 1_000_000, send: { bus: 'gpio', la: 3, level: 1 } })
+  })
+
+  it('logs the send with the capture and points at it in the trace', async () => {
+    let seq = 7
+    const { call, seen } = fake({
+      wiring: () => ok({ pins: [{ la: 1, wired_to: 'i2c_sda' }, { la: 2, wired_to: 'i2c_scl' }] }),
+      la_pins: () => ok(pins()),
+      capture_la: () => ok({ samples: 2112, sample_rate_hz: 1e6, trigger: 'LA1 falling', pre_samples: 64, channels: [], send: { bus: 'i2c', ack: true, rx_hex: '60', nack_at: null } }),
+      decode_la: () => ok({ protocol: 'i2c', transactions: 1 }),
+    })
+    const fetchCapture = vi.fn(async (kind: string) => (kind === 'la' ? { seq, sample_rate_hz: 1e6, count: 2112, edges: [] } : { seq: 0 })) as never
+    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} />)
+    fireEvent.change(await screen.findByLabelText('Address'), { target: { value: '0x76' } })
+    fireEvent.change(screen.getByLabelText('Write (hex)'), { target: { value: 'd0' } })
+    fireEvent.change(screen.getByLabelText('Read bytes'), { target: { value: '1' } })
+    fireEvent.click(screen.getByLabelText('Capture it'))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect((await screen.findByTestId('i2c-result')).textContent).toBe('0x76 ACK: 60')
+    const cap = seen.find((x) => x.tool === 'capture_la')!
+    expect(cap.args.send).toEqual({ bus: 'i2c', addr: 0x76, write_hex: 'd0', read: 1 })
+    expect(cap.args.trigger_la).toBeUndefined()
+    expect(seen.find((x) => x.tool === 'decode_la')?.args).toEqual({ protocol: 'i2c', sda: 1, scl: 2, capture: 'last', max_items: 1 })
+    expect(seen.some((x) => x.tool === 'i2c_transfer')).toBe(false)
+
+    const log = await screen.findByTestId('bus-log')
+    const row = within(log).getAllByRole('row')[1]
+    expect(row.textContent).toContain('0x76 W d0 R 1, captured')
+    expect(row.textContent).toContain('2,112 samples at 1 MS/s, trigger LA1 falling')
+    fireEvent.click(within(row).getByRole('button', { name: 'Trace' }))
+    await waitFor(() => expect(screen.queryByTestId('trace-note')).toBeNull())
+    seq = 8
+    fireEvent.click(within(row).getByRole('button', { name: 'Trace' }))
+    expect((await screen.findByTestId('trace-note')).textContent).toContain('A newer capture replaced')
+  })
+
+  it('a send that fails inside the capture shows its error', async () => {
+    const { call } = fake({
+      wiring: () => ok({ pins: [] }),
+      la_pins: () => ok(pins()),
+      capture_la: () => ok({ samples: 2048, sample_rate_hz: 1e6, channels: [], send: { bus: 'gpio', error: 'gpio send: LA3 is not a GPIO output' } }),
+    })
+    const fetchCapture = (async () => ({ seq: 3, sample_rate_hz: 1e6, count: 2048, edges: [] })) as never
+    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
+    fireEvent.click(await screen.findByLabelText('Capture it'))
+    fireEvent.click(screen.getByRole('button', { name: 'Write 1' }))
+    expect(await screen.findAllByText(/gpio send: LA3 is not a GPIO output/)).toHaveLength(2)
+  })
+})
+
+const seg = (type: string, value?: string) => ({ type, start_us: 0, end_us: 1, value })
+const txn = (id: number, segs: ReturnType<typeof seg>[]) => ({ id, direction: 'write+read', address: '0x76', start_us: 0, end_us: 100, ok: true, segments: segs })
+
+describe('send again', () => {
+  it('turns a decoded I2C transaction into a send', () => {
+    const t = txn(1, [seg('start'), seg('address-write', '0x76'), seg('ack'), seg('data-write', '0xD0'), seg('ack'), seg('repeat-start'), seg('address-read', '0x76'), seg('ack'), seg('data-read', '0x60'), seg('nack'), seg('stop')])
+    expect(i2cSendAgain(t)).toEqual({ bus: 'i2c', addr: 0x76, write_hex: 'd0', read: 1 })
+    expect(i2cSendAgain({ ...t, address: '' })).toBeNull()
+  })
+
+  it('groups SPI words into transfers by the gaps between them', () => {
+    const f = (index: number, start: number, mosi: number) => ({ index, start_us: start, end_us: start + 1, mosi, miso: 0, mosi_hex: '', miso_hex: '' })
+    const b = spiBursts([f(1, 0, 0x9f), f(2, 1.1, 0), f(3, 2.2, 0), f(4, 50, 0x05), f(5, 51.1, 0)])
+    expect([...b.entries()]).toEqual([
+      [1, { bus: 'spi', tx_hex: '9f0000' }],
+      [4, { bus: 'spi', tx_hex: '0500' }],
+    ])
+  })
+
+  it('a Send again on the decode table sends it from the I2C tab', async () => {
+    const t = txn(1, [seg('start'), seg('address-write', '0x76'), seg('ack'), seg('data-write', '0xD0'), seg('ack'), seg('repeat-start'), seg('address-read', '0x76'), seg('ack'), seg('data-read', '0x60'), seg('nack'), seg('stop')])
+    HTMLCanvasElement.prototype.getContext = (() => null) as never
+    const { call, seen } = fake({
+      wiring: () => ok({ pins: [{ la: 1, wired_to: 'i2c_sda' }, { la: 2, wired_to: 'i2c_scl' }] }),
+      la_pins: () => ok(pins()),
+      i2c_transfer: (a) => ok({ addr: a.addr, ack: true, rx_hex: '60' }),
+    })
+    const fetchCapture = (async (kind: string) =>
+      kind === 'la'
+        ? { seq: 5, sample_rate_hz: 1e6, count: 1000, edges: [[0, 3], [10, 2]] }
+        : kind === 'decode'
+          ? { seq: 5, protocol: 'i2c', channels: { sda: 1, scl: 2 }, transactions: [t] }
+          : { seq: 0 }) as never
+    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Fill the send box with transaction 1' }))
+    expect(((await screen.findByLabelText('Write (hex)')) as HTMLInputElement).value).toBe('d0')
+    expect((screen.getByLabelText('Address') as HTMLInputElement).value).toBe('0x76')
+    expect(seen.some((x) => x.tool === 'i2c_transfer')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Send transaction 1 again' }))
+    expect((await screen.findByTestId('i2c-result')).textContent).toBe('0x76 ACK: 60')
+    expect(seen.filter((x) => x.tool === 'i2c_transfer').map((x) => x.args)).toEqual([{ addr: 0x76, write_hex: 'd0', read: 1 }])
   })
 })
