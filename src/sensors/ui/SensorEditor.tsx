@@ -9,6 +9,7 @@ import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import type { FileHost } from './files'
 import { useAnalysis } from './hooks'
 import { DefinitionPreview, ParamSliders, defaultValues } from './Preview'
+import { instanceFor } from '../pod'
 import { RunPanel, type BenchHooks, type RunBlock } from './RunPanel'
 
 /** What the editor opened: one of the user's definitions, a library entry (read-only), or a new one. */
@@ -199,7 +200,7 @@ export function SensorEditor({
               block={block}
               info={info}
               json={a.converted.json}
-              defaultInstance={info.name}
+              defaultInstance={instanceFor(info.name)}
               running={running}
               bench={bench}
               onChanged={onStatusChanged}

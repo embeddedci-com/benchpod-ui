@@ -24,7 +24,7 @@ export const KIND_PINS: Record<SensorKind, { key: string; label: string; require
     { key: 'mosi', label: 'MOSI', required: true },
     { key: 'miso', label: 'MISO', required: true },
     { key: 'cs', label: 'CS', required: true },
-    { key: 'drdy', label: 'Data ready', required: false },
+    // The emulated SPI target has no data-ready pin.
   ],
   uart: [
     { key: 'tx', label: 'TX (pod to DUT)', required: true },

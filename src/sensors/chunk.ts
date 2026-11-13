@@ -1,9 +1,15 @@
-// A definition or stimulus as the pod commands that upload it (sensors-api: sensor_define,
-// sensor_stimulus). The JSON is cut into byte ranges, each sent base64 encoded with its offset and
-// the total, so every command line fits a cloud command (at most 1280 bytes).
+// A definition or stimulus as the pod commands that upload it (benchpod-firmware docs/API.md,
+// "Emulated sensors": sensor_define, sensor_stimulus). The JSON is cut into byte ranges, each sent
+// base64 encoded with its offset and the total, so every command line fits a cloud command (at
+// most 1280 bytes).
 
 /** The longest command line the pod takes over the cloud. */
 export const MAX_COMMAND_BYTES = 1280
+/** Raw bytes per chunk at most: 1024 base64 characters, a command of at most 1152 bytes (the size
+ * the firmware documents and the SDK sends; `data_b64` itself takes at most 1240 characters). */
+export const MAX_CHUNK_BYTES = 768
+/** The largest definition or stimulus the pod takes (`total`). */
+export const MAX_UPLOAD_BYTES = 32768
 
 const enc = new TextEncoder()
 
@@ -55,7 +61,7 @@ export function chunkCommands(
   })
   // What a command costs besides its data, at the widest offset (and the dry_run flag), plus "\n".
   const overhead = byteLength(JSON.stringify(head(total, '', true))) + 1
-  const budget = Math.floor((maxBytes - overhead) / 4) * 3
+  const budget = Math.min(Math.floor((maxBytes - overhead) / 4) * 3, MAX_CHUNK_BYTES)
   if (budget < 3) throw new Error('command size limit too small for one chunk')
   const out: ChunkCommand[] = []
   for (let off = 0; off < total || (total === 0 && out.length === 0); off += budget) {

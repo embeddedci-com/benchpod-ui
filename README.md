@@ -49,7 +49,13 @@ DUT reads, the run panel and the stimulus editor. A host gives it two things:
 - a `SensorStore` (definitions, stimuli, the library and its version): the website implements it
   over its HTTP API, the desktop app over its local API;
 - a `SensorPod` (define, start, set, stimulus, fault, stop, status, regs): `commandSensorPod`
-  builds one over any function that sends one pod command, and holds every command name.
+  builds one over any function that sends one pod command, and holds every command name and
+  reply shape (benchpod-firmware `docs/API.md`, "Emulated sensors"). It reads every page of
+  `sensor_status`, checks instance names (1 to 16 characters of `a-z`, `0-9`, `_`) and sends
+  pins as LA channel numbers: hosts resolve wiring names first.
+
+`SensorsPage` takes `libraryScope`: `'organization'` (the default, the web app) or `'computer'`
+(the desktop app), for the sentence that says who a library version choice applies to.
 
 `fakePod` and `MemorySensorStore` stand in for both in tests and while working on a host.
 

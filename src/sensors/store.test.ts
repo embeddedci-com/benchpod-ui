@@ -5,7 +5,8 @@ import sht4x from './testdata/sht4x.yaml?raw'
 import { fromBase64, joinChunks } from './chunk'
 import { convertSource } from './convert'
 import { loadEngine, setEngineSource, type DefinitionKind, type Engine } from './engine'
-import { commandSensorPod, regsBytes } from './pod'
+import { commandSensorPod, instanceFor, podPins, regsBytes } from './pod'
+import { fakePod } from './fakePod'
 import { convertFormat, copyLibraryEntry, makeZip, MemorySensorStore, SensorStoreError } from './store'
 import { copyName, renameSource, TEMPLATES } from './templates'
 
@@ -108,7 +109,8 @@ describe('commandSensorPod', () => {
         return { status: 'ok', instance: c.instance, kind: 'i2c', name: 'bme280' }
       }
       if (c.cmd === 'sensor_status') return { instances: [{ instance: 'env', kind: 'i2c', name: 'bme280', running: true }] }
-      if (c.cmd === 'sensor_regs') return { data_b64: 'AAEC' }
+      if (c.cmd === 'sensor_regs') return { instance: c.instance, start: c.start, len: c.len, data_b64: 'AAEC' }
+      if (c.cmd === 'sensor_stop') return { stopped: c.all ? ['env', 'ntc'] : [c.instance] }
       return {}
     })
     const json = convertSource(bmp280)
@@ -120,15 +122,15 @@ describe('commandSensorPod', () => {
     expect(joinChunks(defs)).toBe(json.json)
     expect(progress[progress.length - 1]).toBe(defs[0].total)
     sent.length = 0
-    await pod.start('env', { pins: { sda: 2, scl: 1 }, address: '0x77', values: {} })
+    await pod.start('env', { pins: { sda: 'LA2', scl: 1 }, address: '0x77', values: {} })
     await pod.set('env', { temperature_c: 31.5 })
     await pod.fault('env', { type: 'corrupt', at: 0xf7, mask: 1, duration_s: 2 })
     await pod.faultClear('env')
     await pod.stimulus('{"format":1,"kind":"stimulus","signals":{}}')
     await pod.stimulusStart()
     await pod.stimulusStop()
-    await pod.stop('env')
-    await pod.stop()
+    expect(await pod.stop('env')).toEqual(['env'])
+    expect(await pod.stop()).toEqual(['env', 'ntc'])
     expect(sent).toEqual([
       { cmd: 'sensor_start', instance: 'env', pins: { sda: 2, scl: 1 }, address: '0x77' },
       { cmd: 'sensor_set', instance: 'env', values: { temperature_c: 31.5 } },
@@ -142,11 +144,51 @@ describe('commandSensorPod', () => {
     ])
     expect((await pod.status()).instances[0].instance).toBe('env')
     expect(await pod.regs('env', 0xf7, 3)).toEqual(new Uint8Array([0, 1, 2]))
+    expect(sent[sent.length - 1]).toEqual({ cmd: 'sensor_regs', instance: 'env', start: '0xF7', len: 3 })
+    await expect(pod.regs('env', 0xf7, 10)).rejects.toThrow('len is 1..9')
+    await expect(pod.regs('env', 256, 1)).rejects.toThrow('start is 0..255')
   })
 
-  it('reads register bytes in every shape', () => {
-    expect(regsBytes({ bytes: [1, '0x02', 255] })).toEqual(new Uint8Array([1, 2, 255]))
-    expect(regsBytes({ data: 'a0 ff' })).toEqual(new Uint8Array([0xa0, 0xff]))
-    expect(regsBytes({})).toEqual(new Uint8Array())
+  it('reads the one-reply register format', () => {
+    expect(regsBytes({ instance: 'env', start: '0xF7', len: 3, data_b64: 'gAAA' })).toEqual(new Uint8Array([0x80, 0, 0]))
+    expect(() => regsBytes({ bytes: [1, 2] })).toThrow('no data_b64')
+  })
+
+  it('checks instance names and pins like the pod', async () => {
+    const pod = commandSensorPod(async () => ({}))
+    await expect(pod.start('a'.repeat(17), { pins: { sda: 1, scl: 2 } })).rejects.toThrow('instance must be 1..16 characters')
+    await expect(pod.define('Env', '{}')).rejects.toThrow('instance must be 1..16 characters')
+    expect(instanceFor('a_rather_long_ntc_name')).toBe('a_rather_long_nt')
+    expect(instanceFor('bme280')).toBe('bme280')
+    expect(instanceFor('abcdefghijklmno_x')).toBe('abcdefghijklmno')
+    expect(podPins({ sda: 'LA3', scl: '4', output: 'dac' })).toEqual({ sda: 3, scl: 4, output: 'dac' })
+    expect(() => podPins({ sda: 'I2C_SDA' })).toThrow('not an LA channel')
+    expect(() => podPins({ sda: 15 })).toThrow('not an LA channel')
+  })
+
+  it('reads every page of sensor_status and the firmware replies of the fake pod', async () => {
+    const fp = fakePod(undefined, { statusPage: 2 })
+    const pod = commandSensorPod(fp.send)
+    const ntc = '{"format":1,"kind":"analog","name":"ntc","params":[{"key":"t","default":1}]}'
+    const i2c = '{"format":1,"kind":"i2c","name":"env","params":[{"key":"t","default":1}]}'
+    for (const n of ['a', 'b', 'c', 'd', 'e']) {
+      await pod.define(n, n === 'a' || n === 'b' ? ntc : i2c)
+      await pod.start(n, n === 'a' ? { pins: { output: 'dac' } } : n === 'b' ? { pins: { output: 'current' } } : { pins: { sda: 1, scl: 2 }, address: `0x7${n === 'c' ? 6 : n === 'd' ? 7 : 8}` })
+    }
+    const st = await pod.status()
+    expect(st.instances.map((i) => i.instance)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(st.instances.map((i) => i.slot)).toEqual(['analog0', 'analog1', 'i2c0', 'i2c1', 'i2c2'])
+    expect('next' in st).toBe(false)
+    expect(fp.commands.filter((c) => c.cmd === 'sensor_status').map((c) => c.first)).toEqual([undefined, 2, 4])
+    expect(st.instances[2].bus?.transfers).toBeNull()
+    expect((await pod.status('d')).instances.map((i) => i.instance)).toEqual(['d'])
+    await pod.fault('c', { type: 'no_response', duration_s: 2 })
+    expect((await pod.status('c')).instances[0].faults).toEqual([{ type: 'no_response', left_s: 2 }])
+    await expect(fp.send({ cmd: 'sensor_fault', instance: 'c', type: 'bus_stuck', duration_s: 2 })).rejects.toThrow('at most 1 s')
+    await expect(fp.send({ cmd: 'sensor_set', instance: 'c', values: { t: 3 } })).resolves.toEqual({ instance: 'c', values: { t: 3 } })
+    await expect(pod.set('zz', { t: 1 })).rejects.toThrow("unknown sensor instance 'zz'")
+    await pod.define('spi', '{"format":1,"kind":"spi","name":"acc"}')
+    await expect(pod.start('spi', { pins: { sclk: 1, mosi: 2, miso: 3, cs: 4, drdy: 5 } })).rejects.toThrow('no data-ready pin')
+    expect(await pod.stop('e')).toEqual(['e'])
   })
 })

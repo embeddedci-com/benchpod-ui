@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { chunkCommands, fromBase64, joinChunks, MAX_COMMAND_BYTES, toBase64 } from './chunk'
+import { chunkCommands, fromBase64, joinChunks, MAX_CHUNK_BYTES, MAX_COMMAND_BYTES, toBase64 } from './chunk'
 import { convertSource, detectFormat } from './convert'
 import { loadEngine, setEngineSource, type Engine } from './engine'
 import { lineOfPath, parseYaml, toYaml, YamlError, type YamlValue } from './yaml'
@@ -114,7 +114,10 @@ describe('chunkCommands', () => {
     expect(cmds.filter((c) => c.dry_run)).toHaveLength(1)
     expect(cmds[cmds.length - 1].dry_run).toBe(true)
     expect(joinChunks(cmds)).toBe(json)
-    expect(cmds.length).toBeLessThan(40)
+    // 768 raw bytes per chunk at most (the firmware's documented chunk): 1152-byte commands.
+    for (const c of cmds) expect(fromBase64(c.data_b64).length).toBeLessThanOrEqual(MAX_CHUNK_BYTES)
+    for (const c of cmds) expect(new TextEncoder().encode(JSON.stringify(c)).length).toBeLessThanOrEqual(1152)
+    expect(cmds.length).toBe(Math.ceil(new TextEncoder().encode(json).length / MAX_CHUNK_BYTES))
   })
 
   it('rejects chunks out of order', () => {
