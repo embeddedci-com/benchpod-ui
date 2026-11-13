@@ -108,10 +108,10 @@ describe('PinStrip', () => {
     })
     const names = ['i2c_sda', 'i2c_scl', 'READY']
     wrap(<PinStrip call={call} names={names} />)
-    await screen.findByText('I2C SDA')
+    await screen.findByTitle('Owner: I2C SDA')
     for (let la = 1; la <= 14; la++) expect(screen.getByTestId(`pin-${la}`)).toBeTruthy()
     expect(within(screen.getByTestId('pin-3')).getByText('READY')).toBeTruthy()
-    expect(within(screen.getByTestId('pin-3')).getByText('gpio out')).toBeTruthy()
+    expect(within(screen.getByTestId('pin-3')).getByText('gpio')).toBeTruthy()
     const icon = screen.getByLabelText('LA3 warning')
     fireEvent.mouseEnter(icon)
     expect(await screen.findByText(/A pull resistor is on under a push-pull output/)).toBeTruthy()

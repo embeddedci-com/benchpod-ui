@@ -54,10 +54,10 @@ export function TransactionLog({ rows, onClear, maxHeight = 260 }: { rows: BusLo
                       {clock(r.time)}
                     </Table.Td>
                     <Table.Td>{r.proto}</Table.Td>
-                    <Table.Td ff="monospace" style={{ wordBreak: 'break-all' }}>
+                    <Table.Td ff="monospace" style={{ overflowWrap: 'anywhere' }}>
                       {r.out}
                     </Table.Td>
-                    <Table.Td ff="monospace" style={{ wordBreak: 'break-all' }}>
+                    <Table.Td ff="monospace" style={{ overflowWrap: 'anywhere' }}>
                       {r.in}
                     </Table.Td>
                     <Table.Td>

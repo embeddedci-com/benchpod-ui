@@ -68,16 +68,28 @@ export function ownerLabel(p: LaPin): string {
   return f
 }
 
+/** The owner in one short word for the strip: free, gpio, i2c, uart, swd, spi, sensor, step. */
+export function ownerShort(p: LaPin): string {
+  const f = p.function
+  if (!f || f === 'none') return 'free'
+  if (f.startsWith('i2c')) return 'i2c'
+  for (const k of ['gpio', 'uart', 'swd', 'spi', 'sensor', 'step']) if (f.startsWith(k)) return k
+  return f
+}
+
+// Arrows from the pod's side: → the pod drives the board's input, ← the board drives the pin.
 const DIR_LABEL: Record<string, { short: string; long: string }> = {
-  dut_input: { short: '→ DUT', long: 'The board reads this pin: the pod may drive it.' },
-  dut_output: { short: 'DUT →', long: 'The board drives this pin: the pod only listens or uses open drain.' },
-  bidir: { short: '↔', long: 'Both drive this pin (open drain, like I2C).' },
+  dut_input: { short: '→', long: 'An input of the board: the pod may drive it.' },
+  dut_output: { short: '←', long: 'An output of the board: the pod only listens, or uses open drain.' },
+  bidir: { short: '↔', long: 'Both sides drive it (open drain, like I2C).' },
 }
 
 function pullLabel(p: LaPin): string {
-  if (!p.pull) return 'n/a'
-  return p.pull_on ? p.pull : 'off'
+  if (!p.pull) return '–'
+  return p.pull_on ? (p.pull === 'down' ? 'dn' : p.pull) : 'off'
 }
+
+const SMALL = { fontSize: 10, lineHeight: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } as const
 
 export function PinStrip({ call, names, refreshKey }: { call: BenchCall; names?: string[]; refreshKey?: unknown }) {
   const [pins, setPins] = useState<LaPins | null>(null)
@@ -121,7 +133,7 @@ export function PinStrip({ call, names, refreshKey }: { call: BenchCall; names?:
           </Tooltip>
         </Group>
       </Group>
-      <Box style={{ display: 'grid', gridTemplateColumns: 'repeat(14, minmax(56px, 1fr))', gap: 4, overflowX: 'auto' }}>
+      <Box style={{ display: 'grid', gridTemplateColumns: 'repeat(14, minmax(38px, 1fr))', gap: 3, overflowX: 'auto' }}>
         {Array.from({ length: 14 }, (_, i) => i + 1).map((la) => {
           const p = byLa.get(la)
           const warns = p ? pinWarnings(p) : []
@@ -132,7 +144,7 @@ export function PinStrip({ call, names, refreshKey }: { call: BenchCall; names?:
             <Paper
               key={la}
               withBorder
-              p={4}
+              px={3} py={2}
               radius="sm"
               data-testid={`pin-${la}`}
               style={{
@@ -142,7 +154,7 @@ export function PinStrip({ call, names, refreshKey }: { call: BenchCall; names?:
               }}
             >
               <Group gap={2} justify="space-between" wrap="nowrap">
-                <Text size="xs" fw={700} ff="monospace">
+                <Text fw={700} ff="monospace" style={{ fontSize: 11, lineHeight: '15px' }}>
                   LA{la}
                 </Text>
                 {warns.length ? (
@@ -160,27 +172,27 @@ export function PinStrip({ call, names, refreshKey }: { call: BenchCall; names?:
                       </Stack>
                     }
                   >
-                    <Text size="xs" c="orange" fw={700} aria-label={`LA${la} warning`} style={{ cursor: 'help' }}>
+                    <Text c="orange" fw={700} style={{ fontSize: 11, lineHeight: '15px', cursor: 'help' }} aria-label={`LA${la} warning`}>
                       ⚠
                     </Text>
                   </Tooltip>
                 ) : level !== undefined && level !== null ? (
-                  <Text size="xs" ff="monospace" c={level ? 'teal' : 'dimmed'} title="Live level">
+                  <Text ff="monospace" c={level ? 'teal' : 'dimmed'} style={{ fontSize: 11, lineHeight: '15px' }} title="Live level">
                     {level}
                   </Text>
                 ) : null}
               </Group>
-              <Text size="xs" lineClamp={1} title={names?.[la - 1] || undefined} c={names?.[la - 1] ? undefined : 'dimmed'}>
+              <Text c={names?.[la - 1] ? undefined : 'dimmed'} style={SMALL} title={names?.[la - 1] || 'Not in the wiring'}>
                 {names?.[la - 1] || '·'}
               </Text>
-              <Text size="xs" c={owned ? undefined : 'dimmed'} lineClamp={1}>
-                {p ? ownerLabel(p) : '?'}
+              <Text c={owned ? undefined : 'dimmed'} fw={owned ? 600 : undefined} style={SMALL} title={p ? `Owner: ${ownerLabel(p)}` : undefined}>
+                {p ? ownerShort(p) : '?'}
               </Text>
-              <Group gap={4} wrap="nowrap" justify="space-between">
-                <Text size="xs" c="dimmed" title={dir?.long ?? 'Direction not set'}>
+              <Group gap={2} wrap="nowrap" justify="space-between">
+                <Text c="dimmed" style={SMALL} title={dir?.long ?? 'Direction not set (la_dir)'}>
                   {dir?.short ?? '?'}
                 </Text>
-                <Text size="xs" c={p?.pull_on ? undefined : 'dimmed'} title={p?.pull ? `${p.pull_ohms ?? ''} pull ${p.pull}, ${p.pull_on ? 'on' : 'off'}`.trim() : 'No pull resistor on this pin'}>
+                <Text c={p?.pull_on ? undefined : 'dimmed'} style={SMALL} title={p?.pull ? `${p.pull_ohms ?? ''} pull-${p.pull}, ${p.pull_on ? 'on' : 'off'}`.trim() : 'No pull resistor on this pin'}>
                   {p ? pullLabel(p) : ''}
                 </Text>
               </Group>
