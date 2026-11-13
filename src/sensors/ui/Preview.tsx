@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Badge, Box, Button, Code, Group, NumberInput, Select, SimpleGrid, Slider, Stack, Text, TextInput, Tooltip, useComputedColorScheme } from '@mantine/core'
-import type { AnalogPreview, Engine, ParamInfo, ValidateOk } from '../engine'
+import type { AnalogPreview, CommandMapEntry, Engine, ParamInfo, ValidateOk } from '../engine'
 import { LineChart } from './LineChart'
 
 /** A slider step for a param range: about a thousand steps, rounded to 1, 2 or 5. */
@@ -79,31 +79,42 @@ export function ParamSliders({
 
 const hex2 = (n: number) => n.toString(16).toUpperCase().padStart(2, '0')
 
-/** The 256-byte register image, 16 per row: rebuilt registers highlighted, read-only ones marked. */
+/**
+ * The 256-byte register image, 16 bytes per row: rebuilt registers highlighted, read-only ones
+ * marked. With `registerBytes` 2 (word registers) each cell is one register pointer, image bytes
+ * 2p (MSB) and 2p + 1, so a row holds 8 registers.
+ */
 export function RegisterGrid({
   image,
   dynamic = [],
   readOnly = [],
   changed = [],
-  title = 'Register image',
+  registerBytes = 1,
+  title,
 }: {
   image: Uint8Array
   dynamic?: number[]
   readOnly?: number[]
   changed?: number[]
+  registerBytes?: 1 | 2
   title?: string
 }) {
   const dark = useComputedColorScheme('light') === 'dark'
   const dyn = new Set(dynamic)
   const ro = new Set(readOnly)
   const ch = new Set(changed)
-  const rows = Math.ceil(image.length / 16)
+  const w = registerBytes === 2 ? 2 : 1
+  const cols = 16 / w
+  const count = Math.floor(image.length / w)
+  const rows = Math.ceil(count / cols)
+  const heading = title ?? (w === 2 ? 'Registers (16-bit, MSB first)' : 'Register image')
   const font = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+  const dim = dark ? '#8892a4' : '#94a3b8'
   return (
     <Stack gap={4}>
       <Group justify="space-between" gap="xs">
         <Text size="sm" fw={600}>
-          {title}
+          {heading}
         </Text>
         <Group gap={6}>
           <Badge size="xs" variant="light" color="orange">
@@ -115,12 +126,12 @@ export function RegisterGrid({
         </Group>
       </Group>
       <Box style={{ overflowX: 'auto' }}>
-        <table aria-label={title} style={{ borderCollapse: 'collapse', fontFamily: font, fontSize: 12 }}>
+        <table aria-label={heading} style={{ borderCollapse: 'collapse', fontFamily: font, fontSize: 12 }}>
           <thead>
             <tr>
               <th />
-              {Array.from({ length: 16 }, (_, c) => (
-                <th key={c} style={{ padding: '0 4px', color: dark ? '#8892a4' : '#94a3b8', fontWeight: 400 }}>
+              {Array.from({ length: cols }, (_, c) => (
+                <th key={c} style={{ padding: '0 4px', color: dim, fontWeight: 400 }}>
                   {c.toString(16).toUpperCase()}
                 </th>
               ))}
@@ -129,31 +140,77 @@ export function RegisterGrid({
           <tbody>
             {Array.from({ length: rows }, (_, r) => (
               <tr key={r}>
-                <td style={{ paddingRight: 6, color: dark ? '#8892a4' : '#94a3b8' }}>{hex2(r * 16)}</td>
-                {Array.from({ length: 16 }, (_, c) => {
-                  const a = r * 16 + c
-                  if (a >= image.length) return <td key={c} />
-                  const isDyn = dyn.has(a)
+                <td style={{ paddingRight: 6, color: dim }}>{hex2(r * cols)}</td>
+                {Array.from({ length: cols }, (_, c) => {
+                  const p = r * cols + c
+                  if (p >= count) return <td key={c} />
+                  const bytes = Array.from({ length: w }, (_, i) => p * w + i)
+                  const isDyn = bytes.some((a) => dyn.has(a))
+                  const isRo = bytes.some((a) => ro.has(a))
+                  const isCh = bytes.some((a) => ch.has(a))
+                  const value = bytes.reduce((v, a) => (v << 8) | image[a], 0)
+                  const text = bytes.map((a) => hex2(image[a])).join('')
+                  const where = w === 2 ? `register 0x${hex2(p)} (image 0x${hex2(p * 2)}-0x${hex2(p * 2 + 1)})` : `0x${hex2(p)}`
                   return (
                     <td
                       key={c}
-                      title={`0x${hex2(a)} = 0x${hex2(image[a])} (${image[a]})${isDyn ? ', rebuilt' : ''}${ro.has(a) ? ', read-only' : ''}`}
-                      data-reg={hex2(a)}
+                      title={`${where} = 0x${text} (${value})${isDyn ? ', rebuilt' : ''}${isRo ? ', read-only' : ''}`}
+                      data-reg={hex2(p)}
                       data-dynamic={isDyn || undefined}
                       style={{
                         padding: '1px 4px',
                         textAlign: 'center',
                         borderRadius: 2,
                         background: isDyn ? (dark ? 'rgba(245, 158, 11, 0.25)' : 'rgba(232, 89, 12, 0.14)') : undefined,
-                        outline: ro.has(a) ? `1px solid ${dark ? '#5c6578' : '#adb5bd'}` : undefined,
-                        fontWeight: ch.has(a) ? 700 : 400,
-                        color: image[a] === 0 && !isDyn ? (dark ? '#5c5f66' : '#ced4da') : undefined,
+                        outline: isRo ? `1px solid ${dark ? '#5c6578' : '#adb5bd'}` : undefined,
+                        fontWeight: isCh ? 700 : 400,
+                        color: value === 0 && !isDyn ? (dark ? '#5c5f66' : '#ced4da') : undefined,
                       }}
                     >
-                      {hex2(image[a])}
+                      {text}
                     </td>
                   )
                 })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Box>
+    </Stack>
+  )
+}
+
+const hex4 = (n: number) => n.toString(16).toUpperCase().padStart(4, '0')
+
+/** A command-map sensor's 16-bit commands: the image bytes each one reads. */
+export function CommandMapTable({ map, image }: { map: CommandMapEntry[]; image: Uint8Array }) {
+  const font = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+  const sorted = [...map].sort((a, b) => a.addr - b.addr)
+  return (
+    <Stack gap={4}>
+      <Text size="sm" fw={600}>
+        Commands
+      </Text>
+      <Box style={{ overflowX: 'auto' }}>
+        <table aria-label="Commands" style={{ borderCollapse: 'collapse', fontFamily: font, fontSize: 12 }}>
+          <thead>
+            <tr>
+              {['Command', 'Image', 'Reads'].map((h) => (
+                <th key={h} style={{ padding: '0 8px 0 0', textAlign: 'left', fontWeight: 400 }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((m) => (
+              <tr key={m.addr} data-command={hex4(m.addr)}>
+                <td style={{ paddingRight: 8 }}>0x{hex4(m.addr)}</td>
+                <td style={{ paddingRight: 8 }}>
+                  0x{hex2(m.at)}
+                  {m.span > 1 ? `-0x${hex2(m.at + m.span - 1)}` : ''}
+                </td>
+                <td>{Array.from(image.slice(m.at, m.at + m.span), hex2).join(' ')}</td>
               </tr>
             ))}
           </tbody>
@@ -193,7 +250,14 @@ export function DefinitionPreview({
     return (
       <Stack gap="xs">
         <TimeInput tMs={tMs} onChange={setTMs} />
-        <RegisterGrid image={preview.image} dynamic={preview.dynamic} readOnly={preview.read_only} changed={preview.changed} />
+        <RegisterGrid
+          image={preview.image}
+          dynamic={preview.dynamic}
+          readOnly={preview.read_only}
+          changed={preview.changed}
+          registerBytes={info.bus?.register_bytes === 2 ? 2 : 1}
+        />
+        {info.bus?.command_map && info.bus.map?.length ? <CommandMapTable map={info.bus.map} image={preview.image} /> : null}
       </Stack>
     )
   }
