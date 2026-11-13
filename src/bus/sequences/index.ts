@@ -2,6 +2,7 @@ export { SequencesPanel, stepLabel, type SequencesPanelProps } from './Sequences
 export { sequenceToPytest, pytestFileName, slug, type PytestOptions } from './pytest'
 export { runSequence, type StepOutcome } from './run'
 export { httpSequenceStore, type ApiRequest } from './httpStore'
+export { combinedSequenceStore } from './combinedStore'
 export {
   SEQUENCE_VERSION,
   SEQUENCE_TOOLS,
@@ -9,6 +10,7 @@ export {
   stepDiff,
   stepFromRow,
   stepsFromRows,
+  toolProto,
   type BusSequence,
   type SequenceInput,
   type SequenceStep,

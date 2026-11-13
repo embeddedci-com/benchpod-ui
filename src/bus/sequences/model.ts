@@ -90,6 +90,19 @@ export const SEQUENCE_TOOLS = new Set([
   'capture_la',
 ])
 
+/** The log's bus for a tool, so a run's rows land under the right protocol. */
+export function toolProto(tool: string, args?: Record<string, unknown>): 'i2c' | 'spi' | 'can' | 'gpio' | 'uart' {
+  if (tool === 'capture_la') {
+    const bus = (args?.send as { bus?: string } | undefined)?.bus
+    return bus === 'spi' ? 'spi' : bus === 'gpio' ? 'gpio' : 'i2c'
+  }
+  if (tool.startsWith('i2c_') || tool === 'set_pull') return 'i2c'
+  if (tool.startsWith('spi_')) return 'spi'
+  if (tool.startsWith('can_')) return 'can'
+  if (tool.startsWith('uart_')) return 'uart'
+  return 'gpio'
+}
+
 type Data = Record<string, unknown> | undefined
 
 /** The expectation a tool's result gives, or undefined when there is nothing to check. */

@@ -287,3 +287,54 @@ describe('SequencesPanel', () => {
     expect(screen.queryByText('Rename')).toBeNull()
   })
 })
+
+describe('combinedSequenceStore', () => {
+  it('keeps new ones local, puts shared ones in the account, and moves a local one when shared', async () => {
+    const { combinedSequenceStore } = await import('./combinedStore')
+    const local = memStore([], false)
+    const account = memStore([{ id: 'x', name: 'theirs', version: 1, steps: [], mine: false, shared: true }])
+    const store = combinedSequenceStore(local, account)
+    expect(store.canShare).toBe(true)
+    const a = await store.create({ name: 'mine', steps: [] })
+    expect(a.id).toMatch(/^local:/)
+    const b = await store.create({ name: 'team', steps: [], shared: true })
+    expect(b.id).toMatch(/^account:/)
+    expect((await store.list()).map((s) => s.id)).toEqual([a.id, 'account:x', b.id])
+    const moved = await store.update(a.id, { shared: true })
+    expect(moved.id).toMatch(/^account:/)
+    expect(local.rows).toHaveLength(0)
+    expect(account.rows.find((r) => r.name === 'mine')?.shared).toBe(true)
+    await store.remove(b.id)
+    expect(account.rows.map((r) => r.name)).toEqual(['theirs', 'mine'])
+  })
+
+  it('without an account: local only, no sharing', async () => {
+    const { combinedSequenceStore } = await import('./combinedStore')
+    const store = combinedSequenceStore(memStore([], false), null)
+    expect(store.canShare).toBe(false)
+    expect((await store.create({ name: 'n', steps: [], shared: true })).id).toMatch(/^local:/)
+  })
+})
+
+describe('BusDashboard with sequences', () => {
+  it('selects log rows and saves them as a sequence', async () => {
+    const { BusDashboard } = await import('../BusDashboard')
+    const call: BenchCall = async (tool) => {
+      if (tool === 'wiring') return ok({ pins: [{ la: 1, wired_to: 'i2c_sda' }, { la: 2, wired_to: 'i2c_scl' }] })
+      if (tool === 'la_pins') return ok({ pins: Array.from({ length: 14 }, (_, i) => ({ la: i + 1, function: 'none', pull: null, pull_on: false, in_use: false })), levels: null })
+      if (tool === 'i2c_scan') return ok({ found: [0x76], found_hex: ['0x76'] })
+      return ok({})
+    }
+    const store = memStore()
+    wrap(<BusDashboard call={call} fetchCapture={(async () => ({ seq: 0 })) as never} sequences={store} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan' }))
+    const box = await screen.findByLabelText('Select scan 0x08..0x77')
+    fireEvent.click(box)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save 1 step' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'scan' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(store.rows).toHaveLength(1))
+    expect(store.rows[0].steps[0]).toMatchObject({ tool: 'i2c_scan', expect: { found: [0x76] } })
+  })
+})
