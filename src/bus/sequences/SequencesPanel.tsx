@@ -26,6 +26,18 @@ export function stepLabel(s: SequenceStep): string {
   switch (s.tool) {
     case 'i2c_transfer':
       return `I2C ${addr(a.addr)}${a.write_hex ? ` W ${hex(a.write_hex)}` : ''}${Number(a.read) ? ` R ${a.read}` : ''}`
+    case 'i2c_scan':
+      return 'I2C scan'
+    case 'i2c_open':
+      return `I2C open${a.hz ? ` ${Number(a.hz) / 1000} kHz` : ''}`
+    case 'i2c_close':
+      return 'I2C close'
+    case 'set_pull':
+      return `pull-ups ${a.enabled ? 'on' : 'off'} ${[a.las].flat().map((x) => (typeof x === 'number' ? `LA${x}` : String(x))).join(', ')}`
+    case 'capture_la': {
+      const send = a.send as { bus?: string } | undefined
+      return send?.bus ? `capture with an ${send.bus.toUpperCase()} send` : 'capture'
+    }
     case 'spi_transfer':
       return `SPI ${hex(a.tx_hex)}`
     case 'can_write':
