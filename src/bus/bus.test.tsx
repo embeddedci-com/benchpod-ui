@@ -8,6 +8,7 @@ import { I2cTab, parseHexBytes, parseI2cAddr } from './I2cTab'
 import { SpiTab } from './SpiTab'
 import { CanTab, canDataOk, parseCanId } from './CanTab'
 import { captureArgs } from './sendCapture'
+import { i2cSendAgain, spiBursts } from './sendAgain'
 import { PinStrip, ownerLabel, pinWarnings, warnBits, type LaPin } from './PinStrip'
 import { logRow, logRows, loggedCall, nackWhere, type BusLogRow } from './busLog'
 
@@ -314,5 +315,49 @@ describe('send and capture', () => {
     fireEvent.click(await screen.findByLabelText('Capture it'))
     fireEvent.click(screen.getByRole('button', { name: 'Write 1' }))
     expect(await screen.findAllByText(/gpio send: LA3 is not a GPIO output/)).toHaveLength(2)
+  })
+})
+
+const seg = (type: string, value?: string) => ({ type, start_us: 0, end_us: 1, value })
+const txn = (id: number, segs: ReturnType<typeof seg>[]) => ({ id, direction: 'write+read', address: '0x76', start_us: 0, end_us: 100, ok: true, segments: segs })
+
+describe('send again', () => {
+  it('turns a decoded I2C transaction into a send', () => {
+    const t = txn(1, [seg('start'), seg('address-write', '0x76'), seg('ack'), seg('data-write', '0xD0'), seg('ack'), seg('repeat-start'), seg('address-read', '0x76'), seg('ack'), seg('data-read', '0x60'), seg('nack'), seg('stop')])
+    expect(i2cSendAgain(t)).toEqual({ bus: 'i2c', addr: 0x76, write_hex: 'd0', read: 1 })
+    expect(i2cSendAgain({ ...t, address: '' })).toBeNull()
+  })
+
+  it('groups SPI words into transfers by the gaps between them', () => {
+    const f = (index: number, start: number, mosi: number) => ({ index, start_us: start, end_us: start + 1, mosi, miso: 0, mosi_hex: '', miso_hex: '' })
+    const b = spiBursts([f(1, 0, 0x9f), f(2, 1.1, 0), f(3, 2.2, 0), f(4, 50, 0x05), f(5, 51.1, 0)])
+    expect([...b.entries()]).toEqual([
+      [1, { bus: 'spi', tx_hex: '9f0000' }],
+      [4, { bus: 'spi', tx_hex: '0500' }],
+    ])
+  })
+
+  it('a Send again on the decode table sends it from the I2C tab', async () => {
+    const t = txn(1, [seg('start'), seg('address-write', '0x76'), seg('ack'), seg('data-write', '0xD0'), seg('ack'), seg('repeat-start'), seg('address-read', '0x76'), seg('ack'), seg('data-read', '0x60'), seg('nack'), seg('stop')])
+    HTMLCanvasElement.prototype.getContext = (() => null) as never
+    const { call, seen } = fake({
+      wiring: () => ok({ pins: [{ la: 1, wired_to: 'i2c_sda' }, { la: 2, wired_to: 'i2c_scl' }] }),
+      la_pins: () => ok(pins()),
+      i2c_transfer: (a) => ok({ addr: a.addr, ack: true, rx_hex: '60' }),
+    })
+    const fetchCapture = (async (kind: string) =>
+      kind === 'la'
+        ? { seq: 5, sample_rate_hz: 1e6, count: 1000, edges: [[0, 3], [10, 2]] }
+        : kind === 'decode'
+          ? { seq: 5, protocol: 'i2c', channels: { sda: 1, scl: 2 }, transactions: [t] }
+          : { seq: 0 }) as never
+    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Fill the send box with transaction 1' }))
+    expect(((await screen.findByLabelText('Write (hex)')) as HTMLInputElement).value).toBe('d0')
+    expect((screen.getByLabelText('Address') as HTMLInputElement).value).toBe('0x76')
+    expect(seen.some((x) => x.tool === 'i2c_transfer')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Send transaction 1 again' }))
+    expect((await screen.findByTestId('i2c-result')).textContent).toBe('0x76 ACK: 60')
+    expect(seen.filter((x) => x.tool === 'i2c_transfer').map((x) => x.args)).toEqual([{ addr: 0x76, write_hex: 'd0', read: 1 }])
   })
 })

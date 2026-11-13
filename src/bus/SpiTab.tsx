@@ -4,6 +4,7 @@ import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { parseHexBytes } from './I2cTab'
 import { fmtSi, spacedHex } from './busLog'
 import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
+import type { SendAgainRequest } from './sendAgain'
 
 // The pod as SPI master on four LA pins: pins, mode, rate, then one full-duplex transfer per
 // Send (CS low for all the bytes). The tool is spi_transfer; it arms the SPI master for the call
@@ -43,6 +44,8 @@ export function SpiTab({
   call,
   wired,
   sendCapture,
+  fill,
+  onFilled,
   onChange,
 }: {
   call: BenchCall
@@ -50,6 +53,10 @@ export function SpiTab({
   wired?: Partial<Record<keyof SpiPins, number | null>>
   /** Send and capture (the dashboard's): with it, a "Capture it" box sits next to Send. */
   sendCapture?: SendCapture
+  /** Send again from the trace: fill the send box with this (and send it when `now`). */
+  fill?: (SendAgainRequest & { bus: 'spi' }) | null
+  /** The fill was taken (so a remount does not take it again). */
+  onFilled?: () => void
   onChange?: () => void
 }) {
   const [pins, setPins] = useState<SpiPins>({ sck: null, mosi: null, miso: null, cs: null })
@@ -80,7 +87,8 @@ export function SpiTab({
   const capturing = capture && !!sendCapture && onWiring
   const tooLong = capturing && n > SEND_MAX_BYTES
 
-  const send = async () => {
+  const send = () => sendWith(bytes)
+  const sendWith = async (bytes: string | null) => {
     if (!bytes) return
     setBusy('send')
     setError(undefined)
@@ -106,6 +114,16 @@ export function SpiTab({
       onChange?.()
     }
   }
+
+  // Send again: take the fill once, then tell the dashboard it is taken.
+  useEffect(() => {
+    if (!fill) return
+    setTx(spacedHex(fill.tx_hex))
+    onFilled?.()
+    if (fill.now) void sendWith(fill.tx_hex)
+    // only a new fill matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fill])
 
   const pin = (k: keyof SpiPins, label: string) => (
     <Select

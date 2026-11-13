@@ -33,6 +33,7 @@ export {
   type DecodeSegment,
   type UartFrame,
   type SpiFrame,
+  type DecodeRowActions,
 } from './capture/DecodeTables'
 export { CaptureView, type FetchCapture, type LaCaptureData, type AdcCaptureData, type DecodeData } from './capture/CaptureView'
 export { BusDashboard } from './bus/BusDashboard'
@@ -42,6 +43,8 @@ export { GpioTab } from './bus/GpioTab'
 export { SpiTab, spiPinArgs } from './bus/SpiTab'
 export { CanTab, parseCanId, canDataOk } from './bus/CanTab'
 export { TransactionLog } from './bus/TransactionLog'
+export { captureArgs, type SendSpec, type SendResult, type SendCapture, type SendCaptureOutcome } from './bus/sendCapture'
+export { i2cSendAgain, spiBursts, type SendAgain, type SendAgainRequest } from './bus/sendAgain'
 export { logRow, logRows, loggedCall, canFrameText, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
 export { WiringEditor, WiringChannelMap } from './wiring/WiringEditor'
 export {

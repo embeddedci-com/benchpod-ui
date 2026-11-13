@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Chip, Group, NumberInput, Select, Stack, Switch, Text } from '@mantine/core'
 import { CaptureCanvas, useCanvasColors, type LaEdge } from './CaptureCanvas'
-import { DecodeTable, decodeAnnotations, type DecodeResult } from './DecodeTables'
+import { DecodeTable, decodeAnnotations, type DecodeResult, type DecodeRowActions } from './DecodeTables'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { fmtSi } from '../results/AdcEnvelope'
 
@@ -114,11 +114,14 @@ export function CaptureView({
   call,
   fetchCapture,
   refreshKey,
+  decodeActions,
 }: {
   call: BenchCall
   fetchCapture: FetchCapture
   /** Changes when a capture may have happened elsewhere (the agent's): the view reloads the last one. */
   refreshKey?: unknown
+  /** Extra controls on each decode row (the bus console's Send again). */
+  decodeActions?: DecodeRowActions
 }) {
   const colors = useCanvasColors()
   const [mode, setMode] = useState<Mode>('la')
@@ -349,7 +352,7 @@ export function CaptureView({
             </Button>
             {result ? <Switch size="xs" label="On the waveform" checked={overlay} onChange={(e) => setOverlay(e.currentTarget.checked)} /> : null}
           </Group>
-          {result ? <DecodeTable result={result} /> : null}
+          {result ? <DecodeTable result={result} actions={decodeActions} /> : null}
         </Stack>
       ) : null}
     </Stack>

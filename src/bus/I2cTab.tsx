@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Divider, Group, NumberInput, SegmentedControl,
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { fmtSi, hex2, nackWhere, spacedHex } from './busLog'
 import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
+import type { SendAgainRequest } from './sendAgain'
 
 // The pod as I2C master on two LA pins: open a session (pins, speed, pull-ups), send a write, a
 // read or both, scan the bus, close. The tools are i2c_open, i2c_transfer, i2c_scan, i2c_close;
@@ -40,6 +41,8 @@ export function I2cTab({
   wiredSda,
   wiredScl,
   sendCapture,
+  fill,
+  onFilled,
   onChange,
 }: {
   call: BenchCall
@@ -48,6 +51,10 @@ export function I2cTab({
   wiredScl?: number | null
   /** Send and capture (the dashboard's): with it, a "Capture it" box sits next to Send. */
   sendCapture?: SendCapture
+  /** Send again from the trace: fill the send box with this (and send it when `now`). */
+  fill?: (SendAgainRequest & { bus: 'i2c' }) | null
+  /** The fill was taken (so a remount does not take it again). */
+  onFilled?: () => void
   /** A call ran that may have changed the pins. */
   onChange?: () => void
 }) {
@@ -108,7 +115,8 @@ export function I2cTab({
   const capturing = capture && !!sendCapture
   const tooLong = capturing && (w?.length ?? 0) / 2 > SEND_MAX_BYTES
   const readTooLong = capturing && n > SEND_MAX_BYTES
-  const send = async () => {
+  const send = () => sendWith(a, w, n)
+  const sendWith = async (a: number, w: string | null, n: number) => {
     if (Number.isNaN(a) || w === null) return
     setLast(null)
     if (capturing && sendCapture) {
@@ -130,6 +138,18 @@ export function I2cTab({
     const r = await run<Xfer>('send', 'i2c_transfer', { addr: a, write_hex: w, read: n })
     if (r) setLast({ ...r, written: w.length / 2 })
   }
+  // Send again: take the fill once, then tell the dashboard it is taken.
+  useEffect(() => {
+    if (!fill) return
+    setAddr(hex2(fill.addr))
+    setWrite(spacedHex(fill.write_hex))
+    setRead(fill.read)
+    onFilled?.()
+    if (fill.now) void sendWith(fill.addr, fill.write_hex, fill.read)
+    // only a new fill matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fill])
+
   const scan = async () => {
     setFound(null)
     const r = await run<Scan>('scan', 'i2c_scan', {})
