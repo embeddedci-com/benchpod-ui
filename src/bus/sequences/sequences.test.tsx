@@ -1,0 +1,289 @@
+// @vitest-environment jsdom
+// The repo has no Node types; this is the one Node API the tests use (Python's parser on the output).
+// @ts-ignore
+import { spawnSync as nodeSpawnSync } from 'node:child_process'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MantineProvider } from '@mantine/core'
+import type { BenchCall, BenchResult } from '../../bench/benchCall'
+import { logRow, type BusLogRow } from '../busLog'
+import { SEQUENCE_VERSION, stepDiff, stepFromRow, stepsFromRows, type BusSequence, type SequenceInput, type SequenceStep, type SequenceStore } from './model'
+import { pyInt, pytestFileName, sequenceToPytest, slug } from './pytest'
+import { runSequence } from './run'
+import { httpSequenceStore } from './httpStore'
+import { SequencesPanel } from './SequencesPanel'
+
+beforeAll(() => {
+  window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as never
+  globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as never
+  Element.prototype.scrollIntoView ??= () => {}
+})
+afterEach(cleanup)
+
+const ok = (structured: unknown): BenchResult => ({ text: JSON.stringify(structured), structured })
+const err = (text: string): BenchResult => ({ text, is_error: true })
+const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
+const DATE = new Date('2026-11-13T12:00:00Z')
+
+type Spawn = (cmd: string, args: string[], opts?: { input?: string; encoding?: 'utf8' }) => { status: number | null; stderr: string }
+const spawnSync = nodeSpawnSync as Spawn
+
+/** Python's own parser on the generated text, when a python3 is on the PATH. */
+const python = spawnSync('python3', ['--version']).status === 0
+function pyParse(code: string): string {
+  const r = spawnSync('python3', ['-c', 'import ast, sys; ast.parse(sys.stdin.read(), "test.py")'], { input: code, encoding: 'utf8' })
+  return r.status === 0 ? 'ok' : r.stderr
+}
+
+const NAMES = ['i2c_sda', 'i2c_scl', 'READY', '', 'LED', '', '', '', '', '', '', '', 'spi_sclk', 'spi_mosi']
+
+/** Every tool the export knows, as the dashboard logs them. */
+const ALL: SequenceStep[] = [
+  { tool: 'set_pull', args: { las: [1, 2], enabled: true } },
+  { tool: 'i2c_open', args: { hz: 400000, pullups: 'pod' } },
+  { tool: 'i2c_scan', args: { start: 8, end: 119 }, expect: { found: [0x76] } },
+  { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } },
+  { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: 'f4 27', read: 0 }, expect: { ack: true } },
+  { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: 'f7', read: 6 }, expect: { ack: true, rx_hex: '5a3c0080f000' } },
+  { tool: 'i2c_transfer', args: { addr: 0x50, write_hex: '0001', read: 2 }, expect: { ack: false } },
+  { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: '', read: 0 }, expect: { ack: true } },
+  { tool: 'capture_la', args: { samples: 8192, sample_rate_hz: 12000000, send: { bus: 'i2c', addr: 0x76, write_hex: 'd0', read: 1 } }, expect: { send_ok: true, ack: true, rx_hex: '58' } },
+  { tool: 'i2c_close', args: {} },
+  { tool: 'gpio_mode', args: { la: [5], mode: 'output', level: 0 } },
+  { tool: 'gpio_write', args: { la: [5], level: 1 } },
+  { tool: 'gpio_read', args: { la: [3] }, expect: { levels: [{ la: 3, level: 1 }] } },
+  { tool: 'gpio_wait', args: { la: 'READY', level: 1, timeout: 2 }, expect: { reached: true } },
+  { tool: 'gpio_pulse', args: { la: 5, width: 0.001, count: 3 } },
+  { tool: 'capture_la', args: { samples: 4096, send: { bus: 'gpio', la: 5, level: 0 } }, expect: { send_ok: true } },
+  { tool: 'gpio_release', args: { la: [5] } },
+  { tool: 'spi_transfer', args: { tx_hex: '9f000000', hz: 1000000, mode: 0 }, expect: { rx_hex: 'ffef4018' } },
+  { tool: 'can_open', args: { bitrate: 500000, mode: 'normal', term: true } },
+  { tool: 'can_write', args: { can_id: 0x123, data: [1, 2, 255], ext: false } },
+  { tool: 'can_read', args: { timeout: 0.5, max_frames: 8 }, expect: { frames: [{ id: 0x321, data: [0xaa] }] } },
+  { tool: 'can_close', args: {} },
+  { tool: 'uart_open', args: { baud: 115200 } },
+  { tool: 'uart_write', args: { text: 'status "now"', line_ending: 'crlf' } },
+  { tool: 'uart_close', args: {} },
+  { tool: 'flash', args: { file: 'fw.elf' } },
+]
+
+describe('pytest export', () => {
+  it('names the file and the test from the sequence', () => {
+    expect(pytestFileName('Read BME280 chip ID!')).toBe('test_read_bme280_chip_id.py')
+    expect(slug('42 steps')).toBe('seq_42_steps')
+    expect(slug('***')).toBe('sequence')
+    expect(pyInt(400000)).toBe('400_000')
+    expect(pyInt(115200)).toBe('115_200')
+    expect(pyInt(4096)).toBe('4096')
+  })
+
+  it('writes every known step as SDK calls (snapshot)', async () => {
+    const code = sequenceToPytest({ name: 'All the buses', steps: ALL }, { names: NAMES, date: DATE })
+    await expect(code).toMatchFileSnapshot('__snapshots__/test_all_the_buses.py')
+  })
+
+  it('a short I2C sequence reads like hand-written code (snapshot)', async () => {
+    const steps: SequenceStep[] = [
+      { tool: 'set_pull', args: { las: [1, 2], enabled: true } },
+      { tool: 'i2c_open', args: { sda: 1, scl: 2, hz: 100000 } },
+      { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } },
+      { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: 'f427', read: 0 }, expect: { ack: true } },
+    ]
+    const code = sequenceToPytest({ name: 'Read chip id', steps }, { names: NAMES, date: DATE })
+    await expect(code).toMatchFileSnapshot('__snapshots__/test_read_chip_id.py')
+    expect(code).toContain('assert i2c.read_reg(0x76, 0xd0, 1) == bytes.fromhex("58")')
+    expect(code).toContain('i2c.write_reg(0x76, 0xf4, bytes.fromhex("27"))')
+    expect(code).toContain('bp.open_i2c(1, 2, hz=100_000)')
+  })
+
+  it('a GPIO-only sequence needs no session stack', () => {
+    const code = sequenceToPytest({ name: 'blink', steps: [{ tool: 'gpio_mode', args: { la: ['LED'], mode: 'output' } }, { tool: 'gpio_write', args: { la: ['LED'], level: 1 } }] }, { date: DATE })
+    expect(code).not.toContain('ExitStack')
+    expect(code).toContain('bp.configure_gpio(["LED"], "output")')
+    expect(code).toContain('bp.set_gpio("LED", 1)')
+  })
+
+  it('opens an I2C session from the wiring when the sequence used one it did not open', () => {
+    const code = sequenceToPytest({ name: 'x', steps: [{ tool: 'i2c_transfer', args: { addr: 0x48, read: 2 }, expect: { ack: true, rx_hex: '0102' } }] }, { date: DATE })
+    expect(code).toContain('i2c = stack.enter_context(bp.open_i2c())')
+    expect(code).toContain('assert i2c.read(0x48, 2) == bytes.fromhex("01 02")')
+  })
+
+  it('an empty sequence is still a valid test', () => {
+    expect(sequenceToPytest({ name: 'empty', steps: [] }, { date: DATE })).toContain('    pass  # the sequence has no steps')
+  })
+
+  it.skipIf(!python)('the output parses as Python', () => {
+    const cases: Pick<BusSequence, 'name' | 'steps'>[] = [
+      { name: 'All the buses', steps: ALL },
+      { name: 'empty', steps: [] },
+      { name: 'quotes " and \\ and\nnew lines', steps: [{ tool: 'uart_write', args: { text: 'a "b" \\ c\n' } }] },
+      ...ALL.map((s, i) => ({ name: `one ${i}`, steps: [s] })),
+    ]
+    for (const c of cases) expect([c.name, pyParse(sequenceToPytest(c, { names: NAMES }))]).toEqual([c.name, 'ok'])
+  })
+})
+
+describe('steps from log rows', () => {
+  const row = (id: number, time: number, tool: string, args: Record<string, unknown>, r: BenchResult): BusLogRow => logRow(id, time, 'I2C', tool, args, r)
+
+  it('keeps the args and what a read saw, oldest first, and leaves out failed rows', () => {
+    const rows = [
+      row(3, 30, 'i2c_transfer', { addr: 0x76, write_hex: 'd0', read: 1 }, ok({ addr: 0x76, ack: true, rx_hex: '58' })),
+      row(1, 10, 'i2c_open', { hz: 400000 }, ok({ open: true, sda: 1, scl: 2, hz: 400000 })),
+      row(2, 20, 'i2c_transfer', { addr: 0x77, read: 1 }, err('no session')),
+      row(4, 40, 'wiring', {}, ok({})),
+    ]
+    const steps = stepsFromRows(rows, new Set([1, 2, 3, 4]))
+    expect(steps.map((s) => s.tool)).toEqual(['i2c_open', 'i2c_transfer'])
+    expect(steps[1]).toEqual({ tool: 'i2c_transfer', proto: 'I2C', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } })
+    expect(stepFromRow(rows[2])).toBeNull()
+  })
+
+  it('compares a run with the recording', () => {
+    const s: SequenceStep = { tool: 'i2c_transfer', args: {}, expect: { ack: true, rx_hex: '58' } }
+    expect(stepDiff(s, { ack: true, rx_hex: '58' })).toBeUndefined()
+    expect(stepDiff(s, { ack: true, rx_hex: '60' })).toBe('read 60, recorded 58')
+    expect(stepDiff(s, { ack: false, rx_hex: '' })).toBe('NACK, recorded ACK')
+    expect(stepDiff({ tool: 'gpio_read', args: {}, expect: { levels: [{ la: 3, level: 1 }] } }, { levels: [{ la: 3, level: 0 }] })).toBe('LA3 = 0, recorded 1')
+    expect(stepDiff({ tool: 'gpio_write', args: {} }, {})).toBeUndefined()
+  })
+})
+
+describe('runSequence', () => {
+  it('runs in order, flags a read that differs, and stops at an error', async () => {
+    const seen: string[] = []
+    const call: BenchCall = async (tool) => {
+      seen.push(tool)
+      if (tool === 'i2c_transfer') return ok({ ack: true, rx_hex: '59' })
+      if (tool === 'gpio_write') return err('pin conflict: LA5 is in use by uart')
+      return ok({})
+    }
+    const steps: SequenceStep[] = [
+      { tool: 'i2c_open', args: {} },
+      { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } },
+      { tool: 'gpio_write', args: { la: [5], level: 1 } },
+      { tool: 'i2c_close', args: {} },
+    ]
+    const out = await runSequence(call, steps)
+    expect(seen).toEqual(['i2c_open', 'i2c_transfer', 'gpio_write'])
+    expect(out.map((o) => o.status)).toEqual(['ok', 'differs', 'error', 'skipped'])
+    expect(out[1].note).toBe('read 59, recorded 58')
+    expect(out[2].note).toContain('pin conflict')
+  })
+
+  it('stops when the user declines a step', async () => {
+    const call: BenchCall = async (tool) => (tool === 'gpio_mode' ? { text: 'not run: you declined it', declined: true } : ok({}))
+    const out = await runSequence(call, [{ tool: 'gpio_mode', args: {} }, { tool: 'gpio_write', args: {} }])
+    expect(out.map((o) => o.status)).toEqual(['declined', 'skipped'])
+  })
+})
+
+describe('httpSequenceStore', () => {
+  it('talks to /benchpod/bus-sequences', async () => {
+    const calls: { method: string; path: string; body?: unknown }[] = []
+    const store = httpSequenceStore(async (method, path, body) => {
+      calls.push({ method, path, body })
+      if (method === 'DELETE') return new Response(null, { status: 204 })
+      if (method === 'GET') return Response.json({ sequences: [{ id: 'a', name: 'n', version: 1, steps: [] }] })
+      if (path.endsWith('/x')) return Response.json({ error: 'only the owner can change or delete a shared sequence' }, { status: 403 })
+      return Response.json({ id: 'b', name: 'n', version: 1, steps: [] }, { status: 201 })
+    })
+    expect((await store.list())[0].id).toBe('a')
+    await store.create({ name: 'n', steps: [] })
+    await store.remove('a b')
+    await expect(store.update('x', { name: 'm' })).rejects.toThrow('only the owner')
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(['GET /benchpod/bus-sequences', 'POST /benchpod/bus-sequences', 'DELETE /benchpod/bus-sequences/a%20b', 'PATCH /benchpod/bus-sequences/x'])
+    expect(calls[1].body).toEqual({ version: SEQUENCE_VERSION, name: 'n', steps: [] })
+  })
+})
+
+/** An in-memory store, like the desktop's local file. */
+function memStore(seed: BusSequence[] = [], canShare = true): SequenceStore & { rows: BusSequence[] } {
+  const rows = [...seed]
+  let n = 0
+  return {
+    rows,
+    canShare,
+    where: 'Kept in memory.',
+    list: async () => rows.map((r) => ({ ...r })),
+    create: async (s: SequenceInput) => {
+      const r = { id: `s${++n}`, version: 1, mine: true, shared: !!s.shared, ...s }
+      rows.push(r)
+      return r
+    },
+    update: async (id, s) => {
+      const r = rows.find((x) => x.id === id)!
+      Object.assign(r, s)
+      return r
+    },
+    remove: async (id) => {
+      rows.splice(
+        rows.findIndex((x) => x.id === id),
+        1,
+      )
+    },
+  }
+}
+
+describe('SequencesPanel', () => {
+  const selected: SequenceStep[] = [
+    { tool: 'i2c_open', args: { hz: 400000 } },
+    { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } },
+  ]
+
+  it('saves the selected rows under a name, shared when asked', async () => {
+    const store = memStore()
+    const clear = vi.fn()
+    wrap(<SequencesPanel store={store} call={async () => ok({})} selected={selected} onClearSelection={clear} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save 2 steps' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'chip id' } })
+    fireEvent.click(within(dialog).getByLabelText(/Share in my organization/))
+    expect(within(dialog).getByText('2. I2C 0x76 W d0 R 1')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(store.rows).toHaveLength(1))
+    expect(store.rows[0]).toMatchObject({ name: 'chip id', shared: true, version: SEQUENCE_VERSION, steps: selected })
+    expect(clear).toHaveBeenCalled()
+    expect(await screen.findByText('chip id')).toBeTruthy()
+  })
+
+  it('offers no sharing without an account', async () => {
+    wrap(<SequencesPanel store={memStore([], false)} call={async () => ok({})} selected={selected} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save 2 steps' }))
+    expect(screen.queryByLabelText(/Share in my organization/)).toBeNull()
+  })
+
+  it('runs a sequence through the BenchCall and shows each step', async () => {
+    const seen: string[] = []
+    const call: BenchCall = async (tool) => {
+      seen.push(tool)
+      return tool === 'i2c_transfer' ? ok({ ack: true, rx_hex: '60' }) : ok({})
+    }
+    wrap(<SequencesPanel store={memStore([{ id: 'a', name: 'chip id', version: 1, steps: selected, mine: true }])} call={call} selected={[]} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Run' }))
+    const run = await screen.findByTestId('sequence-run')
+    await waitFor(() => expect(within(run).getByText('read 60, recorded 58')).toBeTruthy())
+    expect(seen).toEqual(['i2c_open', 'i2c_transfer'])
+    expect(within(run).getByText('OK')).toBeTruthy()
+    expect(within(run).getByText('differs')).toBeTruthy()
+  })
+
+  it('exports pytest with the wiring names', async () => {
+    wrap(<SequencesPanel store={memStore([{ id: 'a', name: 'chip id', version: 1, steps: [{ tool: 'set_pull', args: { las: [1, 2], enabled: true } }], mine: true }])} call={async () => ok({})} selected={[]} names={NAMES} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'pytest' }))
+    const code = (await screen.findByLabelText('pytest code')) as HTMLTextAreaElement
+    expect(code.value).toContain('def test_chip_id(benchpod):')
+    expect(code.value).toContain('bp.enable_pullup(1, 2)  # LA1 i2c_sda, LA2 i2c_scl')
+  })
+
+  it("another member's shared sequence is read-only: a copy, not rename or delete", async () => {
+    const store = memStore([{ id: 'a', name: 'theirs', version: 1, steps: selected, mine: false, shared: true, owner: { id: 'u2', name: 'Sam' } }])
+    wrap(<SequencesPanel store={store} call={async () => ok({})} selected={[]} />)
+    expect(await screen.findByText('from Sam')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'More for theirs' }))
+    expect(await screen.findByText('Save a copy')).toBeTruthy()
+    expect(screen.queryByText('Delete')).toBeNull()
+    expect(screen.queryByText('Rename')).toBeNull()
+  })
+})

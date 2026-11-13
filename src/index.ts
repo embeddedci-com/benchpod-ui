@@ -63,3 +63,4 @@ export {
 // Sensors: import from '@bpui/sensors'; the root re-exports them as a namespace (several names, e.g.
 // FaultSpec and SegmentShape, are also generator types).
 export * as sensors from './sensors'
+export * from './bus/sequences'
