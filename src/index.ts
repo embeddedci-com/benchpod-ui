@@ -41,7 +41,7 @@ export { I2cTab, parseI2cAddr, parseHexBytes } from './bus/I2cTab'
 export { GpioTab } from './bus/GpioTab'
 export { TransactionLog } from './bus/TransactionLog'
 export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
-export { WiringEditor, WiringChannelMap } from './wiring/WiringEditor'
+export { WiringEditor, WiringChannelMap, WiringDirections } from './wiring/WiringEditor'
 export {
   effectiveWiring,
   validateWiring,
