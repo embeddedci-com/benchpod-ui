@@ -39,6 +39,16 @@ and draws the last capture from the host's copy of the BenchPod MCP server's cap
 `src/wiring/model.ts` is the web app's wiring profile model (schema v1: keys, defaults, checks,
 the LA channel map), and `WiringEditor` edits a profile object and hands it to the host to apply.
 
+## Bus console
+
+`src/bus/BusDashboard` is one page to listen to the DUT's buses and drive them: the capture view on
+top, the 14 LA pins in one row (`PinStrip`, from the `la_pins` tool: wiring name, owner, which way
+the DUT signal goes, level, pull and the pod's warnings), and a dock with Console, I2C and GPIO
+tabs over one transaction log. The I2C tab runs `i2c_open`, `i2c_transfer`, `i2c_scan` and
+`i2c_close` (gateware v55 and later); the GPIO tab the `gpio_*` tools. Every call goes through the
+host's `BenchCall`, so its confirmations apply, and a refusal shows the pod's own text. The host
+passes its console terminal as `renderConsole(call)`, so the console's writes are logged too.
+
 ## Sensors
 
 `src/sensors` is the Sensors page for user-defined sensors (the format is in

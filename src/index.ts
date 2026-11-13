@@ -35,6 +35,12 @@ export {
   type SpiFrame,
 } from './capture/DecodeTables'
 export { CaptureView, type FetchCapture, type LaCaptureData, type AdcCaptureData, type DecodeData } from './capture/CaptureView'
+export { BusDashboard } from './bus/BusDashboard'
+export { PinStrip, pinWarnings, warnBits, ownerLabel, WARN_PULL_UNDER_PUSH_PULL, WARN_UNPOWERED_DUT, type LaPin, type LaPins } from './bus/PinStrip'
+export { I2cTab, parseI2cAddr, parseHexBytes } from './bus/I2cTab'
+export { GpioTab } from './bus/GpioTab'
+export { TransactionLog } from './bus/TransactionLog'
+export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
 export { WiringEditor, WiringChannelMap } from './wiring/WiringEditor'
 export {
   effectiveWiring,
