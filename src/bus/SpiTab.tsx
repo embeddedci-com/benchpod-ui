@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Checkbox, Divider, Group, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Button, Checkbox, Divider, Group, Select, Stack, Switch, Text, TextInput } from '@mantine/core'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { parseHexBytes } from './I2cTab'
 import { fmtSi, spacedHex } from './busLog'
 import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
 import type { SendAgainRequest } from './sendAgain'
+import { DeviceRegs, type SpiTransfer } from './DeviceRegs'
 
 // The pod as SPI master on four LA pins: pins, mode, rate, then one full-duplex transfer per
 // Send (CS low for all the bytes). The tool is spi_transfer; it arms the SPI master for the call
@@ -65,6 +66,7 @@ export function SpiTab({
   const [tx, setTx] = useState('')
   const [last, setLast] = useState<{ tx: string; rx: string; hz: number } | null>(null)
   const [capture, setCapture] = useState(false)
+  const [device, setDevice] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | undefined>()
 
@@ -118,12 +120,22 @@ export function SpiTab({
   // Send again: take the fill once, then tell the dashboard it is taken.
   useEffect(() => {
     if (!fill) return
+    setDevice(false)
     setTx(spacedHex(fill.tx_hex))
     onFilled?.()
     if (fill.now) void sendWith(fill.tx_hex)
     // only a new fill matters
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fill])
+
+  // Device mode: one plain transfer on this tab's pins, mode and rate (no capture).
+  const deviceTransfer: SpiTransfer = async (txHex) => {
+    const r = await call('spi_transfer', { tx_hex: txHex, ...spiPinArgs(pins), hz: Number(hz), mode: Number(mode) })
+    const e = benchError(r)
+    if (e) return { error: e }
+    if (r.declined) return { error: 'not run' }
+    return { rx: benchData<Xfer>(r)?.rx_hex ?? '' }
+  }
 
   const pin = (k: keyof SpiPins, label: string) => (
     <Select
@@ -154,53 +166,61 @@ export function SpiTab({
         CS goes low for all the bytes of one send. The pod rounds the rate down to one it can run. Modes 1 and 2 need gateware v55 or later.
       </Text>
 
-      <Divider label="Send" labelPosition="left" />
-      <Group gap="xs" align="flex-end" wrap="wrap">
-        <TextInput
-          size="xs"
-          style={{ flex: 1, minWidth: 200 }}
-          label="Out (hex)"
-          placeholder="e.g. 9f 00 00 00"
-          value={tx}
-          onChange={(e) => setTx(e.currentTarget.value)}
-          error={txBad ? `whole bytes, up to ${SPI_MAX_BYTES}` : tooLong ? `up to ${SEND_MAX_BYTES} bytes with a capture` : undefined}
-          ff="monospace"
-        />
-        <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || !bytes || txBad || tooLong}>
-          Send
-        </Button>
-        {sendCapture ? (
-          <Checkbox
-            size="xs"
-            label="Capture it"
-            checked={capture && onWiring}
-            disabled={!onWiring}
-            title={onWiring ? undefined : "A capture's send runs on the wiring's SPI pins: set them in the wiring, or clear the picks here."}
-            onChange={(e) => setCapture(e.currentTarget.checked)}
-            mb={6}
-          />
-        ) : null}
+      <Group gap="xs" wrap="nowrap">
+        <Divider label={device ? 'Device' : 'Send'} labelPosition="left" style={{ flex: 1 }} />
+        <Switch size="xs" label="Device mode" checked={device} onChange={(e) => setDevice(e.currentTarget.checked)} />
       </Group>
-      <Text size="xs" c="dimmed">
-        SPI clocks a byte in for every byte out: send 00 for each byte you want to read.
-        {sendCapture && !onWiring ? ' Capture it needs the wiring\'s SPI pins (SCK and CS at least).' : ''}
-        {capturing ? ' Capture it: the trace above starts just before CS falls and decodes the bytes.' : ''}
-      </Text>
-      {last ? (
-        <Stack gap={0} data-testid="spi-result">
-          <Text size="xs" ff="monospace">
-            out {spacedHex(last.tx)}
+      {device ? <DeviceRegs bus="spi" call={call} spiTransfer={deviceTransfer} onSpiMode={(m) => setMode(String(m))} /> : null}
+      {device ? null : (
+        <>
+          <Group gap="xs" align="flex-end" wrap="wrap">
+            <TextInput
+              size="xs"
+              style={{ flex: 1, minWidth: 200 }}
+              label="Out (hex)"
+              placeholder="e.g. 9f 00 00 00"
+              value={tx}
+              onChange={(e) => setTx(e.currentTarget.value)}
+              error={txBad ? `whole bytes, up to ${SPI_MAX_BYTES}` : tooLong ? `up to ${SEND_MAX_BYTES} bytes with a capture` : undefined}
+              ff="monospace"
+            />
+            <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || !bytes || txBad || tooLong}>
+              Send
+            </Button>
+            {sendCapture ? (
+              <Checkbox
+                size="xs"
+                label="Capture it"
+                checked={capture && onWiring}
+                disabled={!onWiring}
+                title={onWiring ? undefined : "A capture's send runs on the wiring's SPI pins: set them in the wiring, or clear the picks here."}
+                onChange={(e) => setCapture(e.currentTarget.checked)}
+                mb={6}
+              />
+            ) : null}
+          </Group>
+          <Text size="xs" c="dimmed">
+            SPI clocks a byte in for every byte out: send 00 for each byte you want to read.
+            {sendCapture && !onWiring ? ' Capture it needs the wiring\'s SPI pins (SCK and CS at least).' : ''}
+            {capturing ? ' Capture it: the trace above starts just before CS falls and decodes the bytes.' : ''}
           </Text>
-          <Text size="xs" ff="monospace" c="teal">
-            in&nbsp; {spacedHex(last.rx)}
-          </Text>
-          {last.hz ? (
-            <Text size="xs" c="dimmed">
-              the pod ran SCK at {fmtSi(last.hz, 'Hz')}
-            </Text>
+          {last ? (
+            <Stack gap={0} data-testid="spi-result">
+              <Text size="xs" ff="monospace">
+                out {spacedHex(last.tx)}
+              </Text>
+              <Text size="xs" ff="monospace" c="teal">
+                in&nbsp; {spacedHex(last.rx)}
+              </Text>
+              {last.hz ? (
+                <Text size="xs" c="dimmed">
+                  the pod ran SCK at {fmtSi(last.hz, 'Hz')}
+                </Text>
+              ) : null}
+            </Stack>
           ) : null}
-        </Stack>
-      ) : null}
+        </>
+      )}
 
       {error ? (
         <Alert color="red" variant="light" p="xs" withCloseButton onClose={() => setError(undefined)}>
