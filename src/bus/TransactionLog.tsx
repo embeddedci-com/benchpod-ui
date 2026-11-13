@@ -1,4 +1,4 @@
-import { Badge, Button, Group, ScrollArea, Table, Text } from '@mantine/core'
+import { Badge, Button, Checkbox, Group, ScrollArea, Table, Text } from '@mantine/core'
 import type { BusLogRow, BusStatus } from './busLog'
 
 // One log for every tab of the bus console, newest first.
@@ -22,10 +22,15 @@ export function TransactionLog({
   rows,
   onClear,
   onShowCapture,
+  selected,
+  onToggle,
   maxHeight = 260,
 }: {
   rows: BusLogRow[]
   onClear: () => void
+  /** Saved sequences: the rows picked to save, and a checkbox per row when onToggle is given. */
+  selected?: ReadonlySet<number>
+  onToggle?: (id: number) => void
   /** A row from send and capture: show its capture in the trace. */
   onShowCapture?: (seq: number) => void
   maxHeight?: number
@@ -49,6 +54,7 @@ export function TransactionLog({
           <Table striped withTableBorder fz="xs" verticalSpacing={2} horizontalSpacing={6} data-testid="bus-log">
             <Table.Thead>
               <Table.Tr>
+                {onToggle ? <Table.Th w={24} /> : null}
                 <Table.Th w={92}>Time</Table.Th>
                 <Table.Th w={48}>Bus</Table.Th>
                 <Table.Th>Out</Table.Th>
@@ -61,6 +67,11 @@ export function TransactionLog({
                 const s = STATUS[r.status]
                 return (
                   <Table.Tr key={r.id}>
+                    {onToggle ? (
+                      <Table.Td>
+                        <Checkbox size="xs" aria-label={`Select ${r.out}`} checked={!!selected?.has(r.id)} disabled={!r.args || r.status === 'error' || r.status === 'declined'} onChange={() => onToggle(r.id)} />
+                      </Table.Td>
+                    ) : null}
                     <Table.Td ff="monospace" c="dimmed">
                       {clock(r.time)}
                     </Table.Td>
