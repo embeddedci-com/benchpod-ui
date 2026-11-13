@@ -22,6 +22,9 @@ export type SensorsPageProps = {
   onUpdateFirmware?: () => void
   bench?: BenchHooks
   files?: FileHost
+  /** Who a library version choice applies to: 'organization' (the web app, default) or
+   * 'computer' (the desktop app, where the setting is kept on this computer). */
+  libraryScope?: 'organization' | 'computer'
   /** Shown above the tabs (the host's own cards, e.g. pull resistors, go below). */
   children?: React.ReactNode
 }
@@ -33,7 +36,7 @@ type View = { tab: 'sensors' | 'stimuli' | 'pod' } & (
 )
 
 /** The Sensors page: the library, the user's sensors and stimuli, the editor, what runs on the pod. */
-export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, bench = {}, files = browserFiles, children }: SensorsPageProps) {
+export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, bench = {}, files = browserFiles, libraryScope = 'organization', children }: SensorsPageProps) {
   const { engine, error: engineError } = useEngine()
   const [view, setView] = useState<View>({ tab: 'sensors', open: null })
   const [mine, setMine] = useState<DefinitionSummary[] | null>(null)
@@ -212,7 +215,7 @@ export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, 
             onError={fail}
             empty="No sensors yet. Duplicate one from the library, start from a template, or upload a file."
           />
-          <LibraryCard store={store} files={files} onOpen={(doc) => setView({ tab: 'sensors', open: 'editor', doc })} onCopy={copyFromLibrary} onError={fail} />
+          <LibraryCard store={store} files={files} scope={libraryScope} onOpen={(doc) => setView({ tab: 'sensors', open: 'editor', doc })} onCopy={copyFromLibrary} onError={fail} />
         </Stack>
       )}
       {view.tab === 'stimuli' && (
@@ -422,12 +425,14 @@ const VERSION_RE = /^\d+\.\d+\.\d+$/
 function LibraryCard({
   store,
   files,
+  scope,
   onOpen,
   onCopy,
   onError,
 }: {
   store: SensorStore
   files: FileHost
+  scope: 'organization' | 'computer'
   onOpen: (doc: EditorDoc) => void
   onCopy: (name: string, version?: string) => void
   onError: (e: unknown) => void
@@ -521,7 +526,7 @@ function LibraryCard({
         </Group>
         <Text size="xs" c="dimmed">
           Ready-made sensors from the public sensor library. Open one to preview it or run it as is; duplicate it to change it.
-          {settings?.can_change ? ' The version applies to your whole organization.' : ''}
+          {settings?.can_change ? (scope === 'computer' ? ' The version applies on this computer.' : ' The version applies to your whole organization.') : ''}
         </Text>
         {libError && <Alert color="red">{libError}</Alert>}
         {lib?.warnings?.map((w) => (

@@ -31,11 +31,15 @@ afterEach(cleanup)
 
 const lib = { version: '0.1.0', entries: [{ source: bmp280 }, { source: sht4x }] }
 
-function setup(opts: { capable?: boolean | null; pod?: ReturnType<typeof fakePod> } = {}) {
-  const store = new MemorySensorStore(lib, (json, kind) => {
-    const r = kind === 'stimulus' ? engine.stimulusValidate(json) : engine.validate(json)
-    return r.ok ? null : r.error
-  })
+function setup(opts: { capable?: boolean | null; pod?: ReturnType<typeof fakePod>; libraryScope?: 'organization' | 'computer' } = {}) {
+  const store = new MemorySensorStore(
+    lib,
+    (json, kind) => {
+      const r = kind === 'stimulus' ? engine.stimulusValidate(json) : engine.validate(json)
+      return r.ok ? null : r.error
+    },
+    { canChangeLibrary: true },
+  )
   const fp = opts.pod ?? fakePod(engine)
   const onUpdateFirmware = vi.fn()
   render(
@@ -47,6 +51,7 @@ function setup(opts: { capable?: boolean | null; pod?: ReturnType<typeof fakePod
         capable={opts.capable === undefined ? true : opts.capable}
         onUpdateFirmware={onUpdateFirmware}
         bench={{ pinDefaults: (k): SensorPins => (k === 'i2c' ? { sda: 1, scl: 2 } : {}) }}
+        libraryScope={opts.libraryScope}
       />
     </MantineProvider>,
   )
@@ -84,6 +89,15 @@ describe('SensorsPage', () => {
 
     fireEvent.click(within(card).getByText('Read'))
     await within(card).findByLabelText('Register read-back')
+  })
+
+  it('says who the library version applies to', async () => {
+    setup()
+    await screen.findByText(/applies to your whole organization/)
+    cleanup()
+    setup({ libraryScope: 'computer' })
+    await screen.findByText(/applies on this computer/)
+    expect(screen.queryByText(/whole organization/)).toBeNull()
   })
 
   it('shows the firmware notice and still edits without the capability', async () => {

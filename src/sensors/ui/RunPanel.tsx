@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Badge, Button, Card, Code, Group, NumberInput, Progress, Select, SimpleGrid, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import type { ParamInfo, SensorKind, ValidateOk } from '../engine'
 import { FAULT_TYPES, KIND_PINS, faultTypesFor, type FaultField } from '../model'
-import type { FaultSpec, InstanceStatus, SensorPins, SensorPod } from '../pod'
+import { isInstanceName, type FaultSpec, type InstanceStatus, type SensorPins, type SensorPod } from '../pod'
 import { ParamSliders, defaultValues, paramLabel } from './Preview'
 
 export const LA_CHANNELS = 14
@@ -20,7 +20,6 @@ export type BenchHooks = {
 /** Why the pod cannot run sensors now, or null. */
 export type RunBlock = string | null
 
-const isName = (s: string) => /^[a-z0-9_]{1,32}$/.test(s)
 const hexAddr = (n: number) => `0x${n.toString(16).toUpperCase().padStart(2, '0')}`
 
 /** Start a definition on the pod: instance name, pins, address or baud; then its live card. */
@@ -67,7 +66,7 @@ export function RunPanel({
   const dup = chosen.length !== new Set(chosen).size
   const why =
     block ??
-    (!pod ? 'No pod' : !isName(instance) ? 'Instance name: a-z, 0-9 and _, up to 32' : missing.length ? `Pick ${missing.join(', ')}` : dup ? 'Two pins on one channel' : null)
+    (!pod ? 'No pod' : !isInstanceName(instance) ? 'Instance name: a-z, 0-9 and _, up to 16' : missing.length ? `Pick ${missing.join(', ')}` : dup ? 'Two pins on one channel' : null)
 
   const start = async () => {
     if (!pod || why) return
@@ -114,7 +113,7 @@ export function RunPanel({
   return (
     <Stack gap="sm">
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
-        <TextInput label="Instance" value={instance} onChange={(e) => setInstance(e.currentTarget.value)} error={instance && !isName(instance) ? 'a-z, 0-9, _' : undefined} />
+        <TextInput label="Instance" value={instance} onChange={(e) => setInstance(e.currentTarget.value)} error={instance && !isInstanceName(instance) ? 'a-z, 0-9, _, up to 16' : undefined} />
         {pinDefs.map((d) => (
           <Select
             key={d.key}
@@ -179,7 +178,9 @@ function busText(bus: Record<string, unknown> | undefined): string[] {
   if (!bus) return []
   const out: string[] = []
   for (const [k, v] of Object.entries(bus)) {
-    if (v && typeof v === 'object') {
+    // transfers is always null (the gateware counts written bytes, not transfers).
+    if (v === null || v === undefined) continue
+    if (typeof v === 'object') {
       const o = v as Record<string, unknown>
       if (k === 'last_write' && 'at' in o) out.push(`last write ${o.at} = ${o.value}`)
       else out.push(`${k.replace(/_/g, ' ')} ${JSON.stringify(v)}`)
@@ -339,6 +340,8 @@ function FaultControls({
           (inst.faults ?? []).map((x, i) => (
             <Badge key={i} color="red" variant="light">
               {x.type}
+              {typeof x.left_s === 'number' ? ` · ${x.left_s.toFixed(1)} s left` : ''}
+              {x.stimulus ? ' · stimulus' : ''}
             </Badge>
           ))
         )}
@@ -383,7 +386,7 @@ function RegsReadback({ pod, instance, block }: { pod: SensorPod | null; instanc
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const s = /^0x[0-9a-f]+$/i.test(start) ? parseInt(start, 16) : Number(start)
-  const ok = Number.isInteger(s) && s >= 0 && s <= 255 && typeof len === 'number' && len >= 1 && len <= 256
+  const ok = Number.isInteger(s) && s >= 0 && s <= 255 && typeof len === 'number' && len >= 1 && len <= 256 - s
   const read = async () => {
     if (!pod || !ok) return
     setBusy(true)
@@ -412,7 +415,7 @@ function RegsReadback({ pod, instance, block }: { pod: SensorPod | null; instanc
           Registers on the pod
         </Text>
         <TextInput size="xs" w={80} label="From" value={start} onChange={(e) => setStart(e.currentTarget.value)} error={!ok && start ? ' ' : undefined} />
-        <NumberInput size="xs" w={80} label="Bytes" min={1} max={256} value={len} onChange={(v) => setLen(typeof v === 'number' ? v : '')} />
+        <NumberInput size="xs" w={80} label="Bytes" min={1} max={Number.isInteger(s) && s >= 0 && s <= 255 ? 256 - s : 256} value={len} onChange={(v) => setLen(typeof v === 'number' ? v : '')} />
         <Button size="xs" variant="light" disabled={!pod || !ok || !!block} loading={busy} onClick={read}>
           Read
         </Button>
