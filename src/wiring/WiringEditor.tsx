@@ -18,6 +18,8 @@ import {
   Tooltip,
 } from '@mantine/core'
 import {
+  defaultDutDir,
+  dutDirOverride,
   effectiveWiring,
   firstFreeLaChannel,
   laChannelMap,
@@ -26,9 +28,13 @@ import {
   MAX_WIRING_SIGNALS,
   validateWiring,
   WIRING_DIRECTIONS,
+  WIRING_DUT_DIR_LABELS,
+  WIRING_DUT_DIRS,
   wiringFieldErrors,
+  withDutDir,
   type Wiring,
   type WiringDirection,
+  type WiringDutDir,
   type WiringRole,
 } from './model'
 
@@ -89,6 +95,63 @@ function ChannelSelect({
   )
 }
 
+const DEFAULT_DIR = 'default'
+
+/**
+ * Which way each wired board signal goes: one row per wired role and signal, with its default and
+ * an optional override (the profile's dut_dirs). The pod never drives a push-pull output on a
+ * board output pin.
+ */
+export function WiringDirections({
+  wiring,
+  onChange,
+  errors,
+}: {
+  wiring: Wiring
+  onChange: (dutDirs: Record<string, WiringDutDir>) => void
+  errors?: Map<string, string>
+}) {
+  const rows = useMemo(() => {
+    const out: { name: string; label: string; la: number }[] = []
+    for (const ch of laChannelMap(wiring))
+      for (const u of ch.users) out.push({ name: u.kind === 'role' ? u.field : u.id, label: u.label, la: ch.la })
+    return out
+  }, [wiring])
+  if (!rows.length) return <Text size="xs" c="dimmed">Nothing is wired.</Text>
+  return (
+    <Stack gap={4}>
+      {rows.map((r) => {
+        const def = defaultDutDir(wiring, r.name)
+        const set = dutDirOverride(wiring, r.name)
+        const key = Object.keys(wiring.dut_dirs ?? {}).find((k) => k.toLowerCase() === r.name.toLowerCase())
+        return (
+          <Group key={r.name} gap="xs" wrap="nowrap">
+            <Text size="xs" ff="monospace" w={40}>
+              LA{r.la}
+            </Text>
+            <Text size="xs" w={110} truncate>
+              {r.label}
+            </Text>
+            <Select
+              size="xs"
+              w={210}
+              aria-label={`${r.label} direction`}
+              data={[
+                { value: DEFAULT_DIR, label: `${WIRING_DUT_DIR_LABELS[def]} (default)` },
+                ...WIRING_DUT_DIRS.filter((d) => d !== def).map((d) => ({ value: d, label: WIRING_DUT_DIR_LABELS[d] })),
+              ]}
+              value={set && set !== def ? set : DEFAULT_DIR}
+              onChange={(v) => v && onChange(withDutDir(wiring, r.name, v === DEFAULT_DIR ? undefined : (v as WiringDutDir)))}
+              allowDeselect={false}
+              error={key ? errors?.get(`dut_dirs.${key}`) : undefined}
+            />
+          </Group>
+        )
+      })}
+    </Stack>
+  )
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Stack gap={6}>
@@ -116,6 +179,11 @@ export function WiringChannelMap({ wiring }: { wiring: Wiring }) {
           <Text size="xs" c={ch.conflict ? 'red' : ch.users.length ? undefined : 'dimmed'} truncate>
             {ch.users.length ? ch.users.map((u) => u.label).join(' / ') : 'free'}
           </Text>
+          {ch.dutDir ? (
+            <Text size="xs" c="dimmed" truncate>
+              {WIRING_DUT_DIR_LABELS[ch.dutDir]}
+            </Text>
+          ) : null}
           {ch.warnings.length ? (
             <Tooltip label={ch.warnings.join('; ')} multiline w={260}>
               <Badge size="xs" color="orange" variant="light">
@@ -127,6 +195,10 @@ export function WiringChannelMap({ wiring }: { wiring: Wiring }) {
       ))}
     </SimpleGrid>
   )
+}
+
+function withDutDirRemoved(w: Wiring, name: string): Wiring {
+  return { ...w, dut_dirs: withDutDir(w, name, undefined) }
 }
 
 export function WiringEditor({
@@ -165,8 +237,16 @@ export function WiringEditor({
     <ChannelSelect key={r} label={label} value={w[r]} onChange={(v) => set({ [r]: v })} wiring={w} field={r} error={fieldErr.get(r)} />
   )
   const signals = w.signals
-  const setSignal = (i: number, patch: Partial<Wiring['signals'][number]>) =>
-    set({ signals: signals.map((s, k) => (k === i ? { ...s, ...patch } : s)) })
+  const setSignal = (i: number, patch: Partial<Wiring['signals'][number]>) => {
+    const next: Record<string, unknown> = { signals: signals.map((s, k) => (k === i ? { ...s, ...patch } : s)) }
+    // A renamed signal keeps its direction override.
+    const old = signals[i].name
+    const dir = old ? dutDirOverride(w, old) : undefined
+    if (patch.name !== undefined && dir) next.dut_dirs = withDutDir(withDutDirRemoved(w, old), patch.name, dir)
+    set(next)
+  }
+  const removeSignal = (i: number) =>
+    set({ signals: signals.filter((_, k) => k !== i), dut_dirs: withDutDirRemoved(w, signals[i].name) })
 
   const save = async () => {
     setSaving(true)
@@ -174,7 +254,7 @@ export function WiringEditor({
     try {
       // Explicit values for every key the editor shows, the rest as they were.
       const out: Record<string, unknown> = { ...draft, version: 1 }
-      for (const k of ['la_mv', 'efuse', 'uart_rx', 'uart_tx', 'uart_baud', 'i2c_sda', 'i2c_scl', 'i2c_addr', 'swd_swclk', 'swd_swdio', 'swd_nreset', 'swd_target', 'spi_sclk', 'spi_mosi', 'spi_miso', 'spi_cs', 'signals'] as const)
+      for (const k of ['la_mv', 'efuse', 'uart_rx', 'uart_tx', 'uart_baud', 'i2c_sda', 'i2c_scl', 'i2c_addr', 'swd_swclk', 'swd_swdio', 'swd_nreset', 'swd_target', 'spi_sclk', 'spi_mosi', 'spi_miso', 'spi_cs', 'signals', 'dut_dirs'] as const)
         out[k] = w[k]
       const e = await onSave(out)
       if (e) setError(e)
@@ -302,7 +382,7 @@ export function WiringEditor({
             />
             <Checkbox size="xs" mt={6} label="active low" checked={s.active_low} onChange={(e) => setSignal(i, { active_low: e.currentTarget.checked })} />
             <TextInput size="xs" style={{ flex: 1, minWidth: 140 }} placeholder="what it is" aria-label="Signal description" value={s.description} onChange={(e) => setSignal(i, { description: e.currentTarget.value })} />
-            <ActionIcon size="sm" mt={4} variant="subtle" color="gray" aria-label={`Remove ${s.name || 'signal'}`} onClick={() => set({ signals: signals.filter((_, k) => k !== i) })}>
+            <ActionIcon size="sm" mt={4} variant="subtle" color="gray" aria-label={`Remove ${s.name || 'signal'}`} onClick={() => removeSignal(i)}>
               ✕
             </ActionIcon>
           </Group>
@@ -317,6 +397,14 @@ export function WiringEditor({
             + Add a signal
           </Button>
         </Group>
+      </Section>
+
+      <Section title="Pin directions">
+        <Text size="xs" c="dimmed">
+          Which way each board signal goes. The pod never drives a board output with a push-pull driver, so it can't fight the board. Each
+          role and signal has a default; change it only when your board differs. Sent to the pod whenever the wiring is applied.
+        </Text>
+        <WiringDirections wiring={w} onChange={(d) => set({ dut_dirs: d })} errors={fieldErr} />
       </Section>
 
       <Section title="Channels">

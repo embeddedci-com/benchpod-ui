@@ -49,8 +49,18 @@ export {
   laChannelLabel,
   WIRING_DEFAULTS,
   WIRING_ROLES,
+  WIRING_DUT_DIRS,
+  WIRING_DUT_DIR_LABELS,
+  ROLE_DUT_DIRS,
+  SIGNAL_DUT_DIRS,
+  wiringDutDir,
+  defaultDutDir,
+  dutDirOverride,
+  pinDutDirs,
+  withDutDir,
   type Wiring,
   type WiringSignal,
+  type WiringDutDir,
   type WiringFieldIssue,
 } from './wiring/model'
 // Sensors: import from '@bpui/sensors'; the root re-exports them as a namespace (several names, e.g.
