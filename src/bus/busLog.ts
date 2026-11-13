@@ -86,6 +86,10 @@ function outText(tool: string, a: Record<string, unknown>): string {
       return `${pins(a.la)} wait for ${a.level ?? 1} (up to ${a.timeout ?? 5} s)`
     case 'gpio_release':
       return `release ${pins(a.la)}`
+    case 'spi_transfer': {
+      const pinsUsed = (['sck', 'mosi', 'miso', 'cs'] as const).filter((k) => a[k] !== undefined).map((k) => `${k.toUpperCase()} ${pins(a[k])}`)
+      return `${spacedHex(String(a.tx_hex ?? ''))} (mode ${a.mode ?? 0}${pinsUsed.length ? `, ${pinsUsed.join(' ')}` : ''})`
+    }
     case 'uart_write':
       return `${String(a.text ?? '')}${a.line_ending === 'crlf' ? '\\r\\n' : a.line_ending === 'none' ? '' : '\\n'}`
     case 'uart_open':
@@ -117,6 +121,13 @@ export function logRow(id: number, time: number, proto: BusProto, tool: string, 
       row.in = spacedHex(d.rx_hex)
       row.status = d.ack ? 'ack' : 'nack'
       if (!d.ack) row.note = nackWhere(d.nack_at, written)
+      return row
+    }
+    case 'spi_transfer': {
+      const d = benchData<{ rx_hex: string; hz: number }>(r)
+      if (!d) return row
+      row.in = spacedHex(d.rx_hex)
+      row.note = `SCK ${fmtSi(d.hz, 'Hz')}`
       return row
     }
     case 'i2c_scan': {

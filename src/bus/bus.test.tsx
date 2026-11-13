@@ -5,6 +5,7 @@ import { MantineProvider } from '@mantine/core'
 import type { BenchCall, BenchResult } from '../bench/benchCall'
 import { BusDashboard } from './BusDashboard'
 import { I2cTab, parseHexBytes, parseI2cAddr } from './I2cTab'
+import { SpiTab } from './SpiTab'
 import { PinStrip, ownerLabel, pinWarnings, warnBits, type LaPin } from './PinStrip'
 import { logRow, loggedCall, nackWhere, type BusLogRow } from './busLog'
 
@@ -157,6 +158,36 @@ describe('I2cTab', () => {
     expect((await screen.findByTestId('i2c-result')).textContent).toBe('0x50 NACK on the address')
     fireEvent.click(screen.getByRole('button', { name: 'Switch on' }))
     expect(await screen.findByText('set_pull: the LA bank is at 1.8 V; the pull resistors need 3.3 V')).toBeTruthy()
+  })
+})
+
+describe('SpiTab', () => {
+  it('sends on the wired pins and shows the bytes in and the rate the pod ran', async () => {
+    const { call, seen } = fake({ spi_transfer: () => ok({ rx_hex: 'ffef4018', hz: 937500 }) })
+    wrap(<SpiTab call={call} wired={{ sck: 3, mosi: 4, miso: 5, cs: 6 }} />)
+    fireEvent.change(screen.getByLabelText('Out (hex)'), { target: { value: '9f 00 00 00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    const res = await screen.findByTestId('spi-result')
+    expect(res.textContent).toContain('ff ef 40 18')
+    expect(res.textContent).toContain('938 kHz')
+    expect(seen[0].args).toEqual({ tx_hex: '9f000000', sck: 3, mosi: 4, miso: 5, cs: 6, hz: 1000000, mode: 0 })
+  })
+
+  it('shows the pod error for mode 2 on old gateware as is', async () => {
+    const msg = 'spi_master: mode 2 needs gateware v55+ (this pod runs v53)'
+    const { call, seen } = fake({ spi_transfer: () => err(msg) })
+    wrap(<SpiTab call={call} />)
+    fireEvent.click(screen.getByLabelText('Mode', { selector: 'input' }))
+    fireEvent.click(await screen.findByRole('option', { name: '2 (CPOL 1, CPHA 0)' }))
+    fireEvent.change(screen.getByLabelText('Out (hex)'), { target: { value: 'aa' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    expect(await screen.findByText(msg)).toBeTruthy()
+    expect(seen[0].args).toEqual({ tx_hex: 'aa', hz: 1000000, mode: 2 })
+  })
+
+  it('logs a transfer with what went out and came back', () => {
+    const r = logRow(1, 0, 'SPI', 'spi_transfer', { tx_hex: '9f000000', mode: 3, cs: 6 }, ok({ rx_hex: 'ffef4018', hz: 1000000 }))
+    expect(r).toMatchObject({ out: '9f 00 00 00 (mode 3, CS LA6)', in: 'ff ef 40 18', note: 'SCK 1 MHz', status: 'ok' })
   })
 })
 

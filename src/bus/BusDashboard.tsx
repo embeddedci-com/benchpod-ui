@@ -5,6 +5,7 @@ import { CaptureView, type FetchCapture } from '../capture/CaptureView'
 import { PinStrip } from './PinStrip'
 import { I2cTab } from './I2cTab'
 import { GpioTab } from './GpioTab'
+import { SpiTab } from './SpiTab'
 import { TransactionLog } from './TransactionLog'
 import { loggedCall, type BusLogRow, type BusProto } from './busLog'
 
@@ -52,7 +53,7 @@ export function BusDashboard({
   }, [])
   const calls = useMemo(() => {
     const mk = (p: BusProto, only?: (t: string) => boolean) => loggedCall(call, p, add, only)
-    return { i2c: mk('I2C'), gpio: mk('GPIO'), uart: mk('UART', (t) => UART_LOGGED.has(t)) }
+    return { i2c: mk('I2C'), spi: mk('SPI'), gpio: mk('GPIO'), uart: mk('UART', (t) => UART_LOGGED.has(t)) }
   }, [call, add])
   const pinsChanged = useCallback(() => setPinsKey((k) => k + 1), [])
 
@@ -67,11 +68,15 @@ export function BusDashboard({
             <Tabs.List px="xs">
               <Tabs.Tab value="console">Console</Tabs.Tab>
               <Tabs.Tab value="i2c">I2C</Tabs.Tab>
+              <Tabs.Tab value="spi">SPI</Tabs.Tab>
               <Tabs.Tab value="gpio">GPIO</Tabs.Tab>
             </Tabs.List>
             <Tabs.Panel value="console">{renderConsole ? <div style={{ height: 360 }}>{renderConsole(calls.uart)}</div> : null}</Tabs.Panel>
             <Tabs.Panel value="i2c">
               <I2cTab call={calls.i2c} wiredSda={wired('i2c_sda')} wiredScl={wired('i2c_scl')} onChange={pinsChanged} />
+            </Tabs.Panel>
+            <Tabs.Panel value="spi">
+              <SpiTab call={calls.spi} wired={{ sck: wired('spi_sclk'), mosi: wired('spi_mosi'), miso: wired('spi_miso'), cs: wired('spi_cs') }} onChange={pinsChanged} />
             </Tabs.Panel>
             <Tabs.Panel value="gpio">
               <GpioTab call={calls.gpio} names={names} onChange={pinsChanged} />
