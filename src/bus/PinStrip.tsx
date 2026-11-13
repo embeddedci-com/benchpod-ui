@@ -109,8 +109,12 @@ export function pullLabel(p: LaPin | undefined): string {
 
 const SMALL = { fontSize: 10, lineHeight: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } as const
 
-/** The strip shows 14 pins in one row when it has the room, else two rows of 7. */
-const ONE_ROW_MIN = 14 * 74
+/** The strip shows 14 pins in one row when it has the room, else rows of 7, or of 4 on a phone. */
+const CELL_MIN = 74
+export function pinColumns(width: number): number {
+  if (width === 0 || width >= 14 * CELL_MIN) return 14
+  return width >= 7 * CELL_MIN ? 7 : 4
+}
 
 export function PinStrip({ call, names, refreshKey, title = 'Pins' }: { call: BenchCall; names?: string[]; refreshKey?: unknown; title?: string }) {
   const [pins, setPins] = useState<LaPins | null>(null)
@@ -146,7 +150,7 @@ export function PinStrip({ call, names, refreshKey, title = 'Pins' }: { call: Be
   const levels = new Map((pins?.levels ?? []).map((l) => [l.la, l.level]))
   const byLa = new Map((pins?.pins ?? []).map((p) => [p.la, p]))
   const warnLines = (pins?.pins ?? []).slice().sort((a, b) => a.la - b.la).flatMap(pinWarningLines)
-  const cols = width === 0 || width >= ONE_ROW_MIN ? 14 : 7
+  const cols = pinColumns(width)
 
   return (
     <Stack gap={4} data-testid="pin-strip">

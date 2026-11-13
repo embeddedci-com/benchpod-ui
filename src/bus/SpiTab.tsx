@@ -202,7 +202,7 @@ export function SpiTab({
           <Text size="xs" c="dimmed">
             SPI clocks a byte in for every byte out: send 00 for each byte you want to read.
             {sendCapture && !onWiring ? ' Capture it needs the wiring\'s SPI pins (SCK and CS at least).' : ''}
-            {capturing ? ' Capture it: the trace above starts just before CS falls and decodes the bytes.' : ''}
+            {capturing ? ' Capture it: the trace starts just before CS falls and decodes the bytes.' : ''}
           </Text>
           {last ? (
             <Stack gap={0} data-testid="spi-result">

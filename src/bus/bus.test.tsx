@@ -9,7 +9,7 @@ import { SpiTab } from './SpiTab'
 import { CanTab, canDataOk, parseCanId } from './CanTab'
 import { captureArgs } from './sendCapture'
 import { i2cSendAgain, spiBursts } from './sendAgain'
-import { PinStrip, dirLabel, ownerLabel, pinWarningLines, pinWarnings, pullLabel, warnBits, type LaPin } from './PinStrip'
+import { PinStrip, pinColumns, dirLabel, ownerLabel, pinWarningLines, pinWarnings, pullLabel, warnBits, type LaPin } from './PinStrip'
 import { logRow, logRows, loggedCall, nackWhere, type BusLogRow } from './busLog'
 
 beforeAll(() => {
@@ -106,6 +106,13 @@ describe('PinStrip', () => {
     expect(pinWarningLines({ la: 6, function: 'gpio', warn: 2 })[0]).toMatch(/^LA6: high or pulled up while the board is off/)
     expect(ownerLabel({ la: 1, function: 'i2cm_sda' })).toBe('I2C SDA')
     expect(ownerLabel({ la: 1, function: 'gpio', gpio: 'open_drain' })).toBe('gpio od')
+  })
+
+  it('fits 14, 7 or 4 pins in a row', () => {
+    expect(pinColumns(0)).toBe(14)
+    expect(pinColumns(1100)).toBe(14)
+    expect(pinColumns(900)).toBe(7)
+    expect(pinColumns(380)).toBe(4)
   })
 
   it('says direction and pull in words', () => {

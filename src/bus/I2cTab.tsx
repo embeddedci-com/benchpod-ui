@@ -256,7 +256,7 @@ export function I2cTab({
           </Group>
           <Text size="xs" c="dimmed">
             Write only, read only, or a write then a read (a repeated START). Neither: a probe of the address.
-            {capturing ? ' Capture it: the trace above starts just before SDA falls and decodes the transaction.' : ''}
+            {capturing ? ' Capture it: the trace starts just before SDA falls and decodes the transaction.' : ''}
           </Text>
           {last ? (
             <Text size="xs" ff="monospace" c={last.ack ? 'teal' : 'orange'} data-testid="i2c-result">
