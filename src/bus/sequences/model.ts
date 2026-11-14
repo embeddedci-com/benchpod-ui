@@ -3,8 +3,14 @@ import type { BusLogRow, BusProto } from '../busLog'
 // A saved sequence: log rows of the bus console kept as the MCP calls they were (the tool and
 // its arguments), with what each read saw when it was recorded. The same JSON goes to the server
 // (embeddedci.com) and to the desktop app's local file; `version` says which format it is.
+//
+// Version 2 adds setup steps: when the selected rows used a bus session opened earlier in the log
+// (an I2C, CAN or UART session, GPIO modes), the sequence starts with the calls that open it the way
+// it was recorded (pins, rate, pull-ups, bitrate, modes), marked `setup: true`. A run makes them
+// first, and the pytest export writes them as its setup. Version 1 sequences have none and still
+// load, run and export as before.
 
-export const SEQUENCE_VERSION = 1
+export const SEQUENCE_VERSION = 2
 
 /** What a step's call returned when it was recorded. Checked on a run, asserted in the pytest export. */
 export type StepExpect = {
@@ -31,6 +37,8 @@ export type SequenceStep = {
   /** For the list: the bus of the log row it came from. */
   proto?: BusProto
   expect?: StepExpect
+  /** Version 2: a call the sequence starts with to set the bus up as it was recorded (not a selected row). */
+  setup?: boolean
 }
 
 export type BusSequence = {
@@ -145,13 +153,192 @@ export function stepFromRow(row: BusLogRow): SequenceStep | null {
   return step
 }
 
-/** Steps from the selected rows, oldest first (the order they ran). */
+/**
+ * Steps from the selected rows, oldest first (the order they ran), after the setup steps that
+ * open the sessions they used but did not open themselves (see setupFromRows).
+ */
 export function stepsFromRows(rows: BusLogRow[], selected: ReadonlySet<number>): SequenceStep[] {
-  return [...rows]
+  const steps = [...rows]
     .filter((r) => selected.has(r.id))
-    .sort((a, b) => a.time - b.time || a.id - b.id)
+    .sort(byTime)
     .map(stepFromRow)
     .filter((s): s is SequenceStep => s !== null)
+  return steps.length ? [...setupFromRows(rows, selected, steps), ...steps] : steps
+}
+
+const byTime = (a: BusLogRow, b: BusLogRow) => a.time - b.time || a.id - b.id
+
+const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+
+const laArr = (v: unknown): unknown[] => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v])
+
+/** The bus state the log rows before the selection left: open sessions and GPIO modes. */
+type BusState = {
+  i2c?: { sda?: unknown; scl?: unknown; hz?: number; pullups: string }
+  can?: Record<string, unknown>
+  uart?: Record<string, unknown>
+  gpio: Map<string, { la: unknown; mode: string; level?: number }>
+}
+
+function stateBefore(rows: BusLogRow[], first: BusLogRow): BusState {
+  const st: BusState = { gpio: new Map() }
+  for (const r of [...rows].sort(byTime)) {
+    if (byTime(r, first) >= 0) break
+    if (!r.args || r.status === 'error' || r.status === 'declined') continue
+    const a = r.args
+    const d = (r.data ?? {}) as Record<string, unknown>
+    switch (r.tool) {
+      case 'i2c_open':
+        // The pod's answer has the pins and rate it used, also when they came from the wiring.
+        st.i2c = { sda: num(d.sda) ?? a.sda, scl: num(d.scl) ?? a.scl, hz: num(d.hz) ?? num(a.hz), pullups: String(d.pullups ?? a.pullups ?? 'pod') }
+        break
+      case 'i2c_close':
+        st.i2c = undefined
+        break
+      case 'can_open': {
+        const c: Record<string, unknown> = {}
+        for (const k of ['bitrate', 'mode', 'term', 'data_bitrate']) if (a[k] !== undefined && a[k] !== null) c[k] = a[k]
+        st.can = c
+        break
+      }
+      case 'can_close':
+        st.can = undefined
+        break
+      case 'uart_open': {
+        const u: Record<string, unknown> = {}
+        for (const k of ['rx', 'tx', 'baud']) {
+          const v = num(d[k]) ?? a[k]
+          if (v !== undefined && v !== null) u[k] = v
+        }
+        st.uart = u
+        break
+      }
+      case 'uart_close':
+        st.uart = undefined
+        break
+      case 'gpio_mode': {
+        const mode = String(a.mode ?? 'output')
+        for (const la of laArr(a.la)) st.gpio.set(String(la), { la, mode, level: mode === 'input' ? undefined : num(a.level) })
+        break
+      }
+      case 'gpio_write':
+        for (const la of laArr(a.la)) {
+          const g = st.gpio.get(String(la))
+          if (g && g.mode !== 'input') g.level = Number(a.level)
+        }
+        break
+      case 'gpio_release':
+        if (!laArr(a.la).length) st.gpio.clear()
+        for (const la of laArr(a.la)) st.gpio.delete(String(la))
+        break
+    }
+  }
+  return st
+}
+
+type Need = 'i2c' | 'can' | 'uart'
+
+/** The session a step uses without opening it, or the one it opens or closes. */
+function sessionOf(s: SequenceStep): { uses?: Need; opens?: Need } {
+  switch (s.tool) {
+    case 'i2c_open':
+    case 'i2c_close':
+      return { opens: 'i2c' }
+    case 'i2c_transfer':
+    case 'i2c_scan':
+      return { uses: 'i2c' }
+    case 'capture_la':
+      return (s.args?.send as { bus?: string } | undefined)?.bus === 'i2c' ? { uses: 'i2c' } : {}
+    case 'can_open':
+    case 'can_close':
+      return { opens: 'can' }
+    case 'can_write':
+    case 'can_read':
+      return { uses: 'can' }
+    case 'uart_open':
+    case 'uart_close':
+      return { opens: 'uart' }
+    case 'uart_write':
+      return { uses: 'uart' }
+    default:
+      return {}
+  }
+}
+
+/** GPIO channels a step drives (they must be outputs); a gpio_mode or gpio_release sets them itself. */
+function gpioOf(s: SequenceStep): { drives: unknown[]; sets: unknown[] } {
+  const a = s.args ?? {}
+  if (s.tool === 'gpio_write' || s.tool === 'gpio_pulse') return { drives: laArr(a.la), sets: [] }
+  if (s.tool === 'capture_la') {
+    const send = a.send as { bus?: string; la?: unknown } | undefined
+    return send?.bus === 'gpio' ? { drives: laArr(send.la), sets: [] } : { drives: [], sets: [] }
+  }
+  if (s.tool === 'gpio_mode' || s.tool === 'gpio_release') return { drives: [], sets: laArr(a.la) }
+  return { drives: [], sets: [] }
+}
+
+/**
+ * The setup steps for a selection: the calls that put the bus where the earlier, unselected log
+ * rows left it, for the sessions and GPIO channels the selected steps use without opening or
+ * claiming them first. An I2C session on the pod's pull-ups also gets the set_pull it needs.
+ */
+export function setupFromRows(rows: BusLogRow[], selected: ReadonlySet<number>, steps: SequenceStep[]): SequenceStep[] {
+  const first = [...rows].filter((r) => selected.has(r.id)).sort(byTime)[0]
+  if (!first) return []
+  const st = stateBefore(rows, first)
+  const need = new Set<Need>()
+  const opened = new Set<Need>()
+  const gpioNeed = new Map<string, unknown>()
+  const gpioSet = new Set<string>()
+  for (const s of steps) {
+    const { uses, opens } = sessionOf(s)
+    if (opens) opened.add(opens)
+    if (uses && !opened.has(uses)) need.add(uses)
+    const g = gpioOf(s)
+    for (const la of g.sets) gpioSet.add(String(la))
+    for (const la of g.drives) if (!gpioSet.has(String(la))) gpioNeed.set(String(la), la)
+  }
+  const out: SequenceStep[] = []
+  if (need.has('i2c') && st.i2c) {
+    const { sda, scl, hz, pullups } = st.i2c
+    if (pullups === 'pod' && sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { las: [sda, scl], enabled: true }, proto: 'I2C', setup: true })
+    const args: Record<string, unknown> = {}
+    if (sda !== undefined) args.sda = sda
+    if (scl !== undefined) args.scl = scl
+    if (hz !== undefined) args.hz = hz
+    args.pullups = pullups
+    out.push({ tool: 'i2c_open', args, proto: 'I2C', setup: true })
+  }
+  // A selected i2c_open on the pod's pull-ups with no set_pull before it: the pull-ups were on
+  // from elsewhere (the pin strip, an earlier row), so the setup switches them on.
+  if (!out.length) {
+    const sel = [...rows].filter((r) => selected.has(r.id) && r.args && r.status !== 'error' && r.status !== 'declined').sort(byTime)
+    const open = sel.find((r) => r.tool === 'i2c_open' || r.tool === 'set_pull')
+    const d = (open?.data ?? {}) as Record<string, unknown>
+    if (open?.tool === 'i2c_open' && String(d.pullups ?? open.args?.pullups ?? 'pod') === 'pod') {
+      const sda = num(d.sda) ?? open.args?.sda
+      const scl = num(d.scl) ?? open.args?.scl
+      if (sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { las: [sda, scl], enabled: true }, proto: 'I2C', setup: true })
+    }
+  }
+  if (need.has('can') && st.can) out.push({ tool: 'can_open', args: { ...st.can }, proto: 'CAN', setup: true })
+  if (need.has('uart') && st.uart) out.push({ tool: 'uart_open', args: { ...st.uart }, proto: 'UART', setup: true })
+  // One gpio_mode per mode and starting level, in channel order.
+  const groups = new Map<string, { mode: string; level?: number; las: unknown[] }>()
+  for (const [key, la] of gpioNeed) {
+    const g = st.gpio.get(key)
+    if (!g) continue
+    const k = `${g.mode}/${g.level ?? ''}`
+    const grp = groups.get(k) ?? { mode: g.mode, level: g.level, las: [] }
+    grp.las.push(la)
+    groups.set(k, grp)
+  }
+  for (const grp of groups.values()) {
+    const args: Record<string, unknown> = { la: grp.las, mode: grp.mode }
+    if (grp.level !== undefined) args.level = grp.level
+    out.push({ tool: 'gpio_mode', args, proto: 'GPIO', setup: true })
+  }
+  return out
 }
 
 const normHex = (h: string | undefined) => (h ?? '').replace(/\s+/g, '').toLowerCase()

@@ -93,7 +93,7 @@ describe('pytest export', () => {
     await expect(code).toMatchFileSnapshot('__snapshots__/test_read_chip_id.py')
     expect(code).toContain('assert i2c.read_reg(0x76, 0xd0, 1) == bytes.fromhex("58")')
     expect(code).toContain('i2c.write_reg(0x76, 0xf4, bytes.fromhex("27"))')
-    expect(code).toContain('bp.open_i2c(1, 2, hz=100_000)')
+    expect(code).toContain('bp.open_i2c(sda=1, scl=2, hz=100_000)')
   })
 
   it('a GPIO-only sequence needs no session stack', () => {
@@ -134,7 +134,10 @@ describe('steps from log rows', () => {
       row(2, 20, 'i2c_transfer', { addr: 0x77, read: 1 }, err('no session')),
       row(4, 40, 'wiring', {}, ok({})),
     ]
-    const steps = stepsFromRows(rows, new Set([1, 2, 3, 4]))
+    const all = stepsFromRows(rows, new Set([1, 2, 3, 4]))
+    // The open was on the pod's pull-ups (the default) without a set_pull row: the setup switches them on.
+    expect(all[0]).toEqual({ tool: 'set_pull', args: { las: [1, 2], enabled: true }, proto: 'I2C', setup: true })
+    const steps = all.filter((s) => !s.setup)
     expect(steps.map((s) => s.tool)).toEqual(['i2c_open', 'i2c_transfer'])
     expect(steps[1]).toEqual({ tool: 'i2c_transfer', proto: 'I2C', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } })
     expect(stepFromRow(rows[2])).toBeNull()
@@ -147,6 +150,152 @@ describe('steps from log rows', () => {
     expect(stepDiff(s, { ack: false, rx_hex: '' })).toBe('NACK, recorded ACK')
     expect(stepDiff({ tool: 'gpio_read', args: {}, expect: { levels: [{ la: 3, level: 1 }] } }, { levels: [{ la: 3, level: 0 }] })).toBe('LA3 = 0, recorded 1')
     expect(stepDiff({ tool: 'gpio_write', args: {} }, {})).toBeUndefined()
+  })
+})
+
+describe('recorded setup (version 2)', () => {
+  // The live test of 2026-11-14: an open with SDA LA2, SCL LA1, 100 kHz on the pod's pull-ups (switched
+  // on from the pin strip, so not in the log), then two selected I2C rows.
+  const LIVE_NAMES = ['i2c_scl', 'i2c_sda']
+  let id = 0
+  const r = (proto: BusLogRow['proto'], tool: string, args: Record<string, unknown>, data: unknown): BusLogRow => {
+    id++
+    return logRow(id, id * 10, proto, tool, args, ok(data))
+  }
+  const liveRows = () => {
+    id = 0
+    return [
+      r('I2C', 'i2c_open', { sda: 2, scl: 1, hz: 100000, pullups: 'pod' }, { open: true, sda: 2, scl: 1, hz: 100000, pullups: 'pod' }),
+      r('I2C', 'i2c_transfer', { addr: 0x42, write_hex: '10c33c', read: 0 }, { addr: 0x42, ack: true }),
+      r('I2C', 'i2c_transfer', { addr: 0x42, write_hex: '10', read: 2 }, { addr: 0x42, ack: true, rx_hex: 'c33c' }),
+    ]
+  }
+
+  it('carries an I2C session opened before the selection, with its pull-ups', () => {
+    const steps = stepsFromRows(liveRows(), new Set([2, 3]))
+    expect(steps.slice(0, 2)).toEqual([
+      { tool: 'set_pull', args: { las: [2, 1], enabled: true }, proto: 'I2C', setup: true },
+      { tool: 'i2c_open', args: { sda: 2, scl: 1, hz: 100000, pullups: 'pod' }, proto: 'I2C', setup: true },
+    ])
+    expect(steps.slice(2).map((s) => s.tool)).toEqual(['i2c_transfer', 'i2c_transfer'])
+  })
+
+  it('exports the recorded I2C setup (snapshot)', async () => {
+    const steps = stepsFromRows(liveRows(), new Set([2, 3]))
+    const code = sequenceToPytest({ name: 'Recorded setup I2C', steps }, { names: LIVE_NAMES, date: DATE })
+    await expect(code).toMatchFileSnapshot('__snapshots__/test_recorded_setup_i2c.py')
+    expect(code).toContain('bp.enable_pullup(2, 1)  # LA2 i2c_sda, LA1 i2c_scl')
+    expect(code).toContain('i2c = stack.enter_context(bp.open_i2c(sda=2, scl=1, hz=100_000, pullups="pod"))')
+    expect(code).toContain('i2c.write_reg(0x42, 0x10, bytes.fromhex("c3 3c"))')
+    expect(code).toContain('assert i2c.read_reg(0x42, 0x10, 2) == bytes.fromhex("c3 3c")')
+    expect(code).not.toContain('opened from the wiring')
+  })
+
+  it('board pull-ups: no set_pull, pullups="external"', () => {
+    const rows = liveRows()
+    rows[0] = logRow(1, 10, 'I2C', 'i2c_open', { hz: 400000, pullups: 'external' }, ok({ open: true, sda: 2, scl: 1, hz: 400000, pullups: 'external' }))
+    const steps = stepsFromRows(rows, new Set([3]))
+    expect(steps.map((s) => s.tool)).toEqual(['i2c_open', 'i2c_transfer'])
+    expect(sequenceToPytest({ name: 'x', steps }, { date: DATE })).toContain('bp.open_i2c(sda=2, scl=1, hz=400_000, pullups="external")')
+  })
+
+  it('a selection that opens its own session gets no setup open, but the pod pull-ups it needed', () => {
+    const steps = stepsFromRows(liveRows(), new Set([1, 2]))
+    expect(steps.map((s) => `${s.tool}${s.setup ? ' (setup)' : ''}`)).toEqual(['set_pull (setup)', 'i2c_open', 'i2c_transfer'])
+  })
+
+  it('a closed session is not carried', () => {
+    const rows = [...liveRows()]
+    rows.splice(1, 0, logRow(99, 15, 'I2C', 'i2c_close', {}, ok({ open: false })))
+    const steps = stepsFromRows(rows, new Set([3]))
+    expect(steps.map((s) => s.tool)).toEqual(['i2c_transfer'])
+  })
+
+  it('SPI: the pins, mode and rate the call was recorded with (snapshot)', async () => {
+    id = 0
+    const rows = [
+      r('SPI', 'spi_transfer', { tx_hex: '9f000000', sck: 13, mosi: 14, miso: 6, cs: 5, hz: 2000000, mode: 1 }, { rx_hex: 'ffef4018', hz: 2000000 }),
+      r('SPI', 'capture_la', { samples: 4096, send: { bus: 'spi', tx_hex: '05', spi_hz: 2000000, spi_mode: 1 } }, { samples: 4096, sample_rate_hz: 24000000, send: { bus: 'spi', rx_hex: '00' } }),
+    ]
+    const steps = stepsFromRows(rows, new Set([1, 2]))
+    expect(steps.some((s) => s.setup)).toBe(false)
+    const code = sequenceToPytest({ name: 'Recorded setup SPI', steps }, { names: NAMES, date: DATE })
+    await expect(code).toMatchFileSnapshot('__snapshots__/test_recorded_setup_spi.py')
+    expect(code).toContain('with bp.open_spi(sck=13, mosi=14, miso=6, cs=5, hz=2_000_000, mode=1) as spi:  # LA13 spi_sclk, LA14 spi_mosi')
+    expect(code).toContain('with bp.open_spi(hz=2_000_000, mode=1) as spi:')
+  })
+
+  it('CAN bitrate and GPIO modes opened before the selection', () => {
+    id = 0
+    const rows = [
+      r('CAN', 'can_open', { bitrate: 250000, mode: 'normal', term: true }, { open: true, bitrate: 250000 }),
+      r('GPIO', 'gpio_mode', { la: [5, 6], mode: 'output', level: 0 }, { pins: [] }),
+      r('GPIO', 'gpio_mode', { la: [7], mode: 'open_drain' }, { pins: [] }),
+      r('GPIO', 'gpio_write', { la: [5], level: 1 }, {}),
+      r('CAN', 'can_write', { can_id: 0x123, data: [1, 2] }, {}),
+      r('GPIO', 'gpio_write', { la: [5, 7], level: 0 }, {}),
+      r('GPIO', 'gpio_write', { la: [6], level: 1 }, {}),
+    ]
+    const steps = stepsFromRows(rows, new Set([5, 6]))
+    expect(steps.filter((s) => s.setup)).toEqual([
+      { tool: 'can_open', args: { bitrate: 250000, mode: 'normal', term: true }, proto: 'CAN', setup: true },
+      { tool: 'gpio_mode', args: { la: [5], mode: 'output', level: 1 }, proto: 'GPIO', setup: true },
+      { tool: 'gpio_mode', args: { la: [7], mode: 'open_drain' }, proto: 'GPIO', setup: true },
+    ])
+    const code = sequenceToPytest({ name: 'x', steps }, { date: DATE })
+    expect(code).toContain('can = stack.enter_context(bp.open_can(bitrate=250_000, mode="normal", term=True))')
+    expect(code).toContain('bp.configure_gpio([5], "output", level=1)')
+    expect(code).toContain('bp.configure_gpio([7], "open_drain")')
+  })
+
+  it('an old (version 1) sequence still exports as before: the session from the wiring', () => {
+    const old: Pick<BusSequence, 'name' | 'steps'> = {
+      name: 'old',
+      steps: [
+        { tool: 'i2c_transfer', args: { addr: 0x42, write_hex: '10c33c', read: 0 }, expect: { ack: true } },
+        { tool: 'i2c_transfer', args: { addr: 0x42, write_hex: '10', read: 2 }, expect: { ack: true, rx_hex: 'c33c' } },
+      ],
+    }
+    const code = sequenceToPytest(old, { date: DATE })
+    expect(code).toContain('# The recorded sequence used a session it did not open; this one is opened from the wiring.')
+    expect(code).toContain('i2c = stack.enter_context(bp.open_i2c())')
+    expect(code).not.toContain('# Setup:')
+  })
+
+  it('a wiring name in set_pull becomes its channel (enable_pullup takes numbers)', () => {
+    const code = sequenceToPytest({ name: 'x', steps: [{ tool: 'set_pull', args: { las: ['i2c_sda', 'OTHER'], enabled: true } }] }, { names: LIVE_NAMES, date: DATE })
+    expect(code).toContain('bp.enable_pullup(2, bp.wiring.la("OTHER"))  # LA2 i2c_sda')
+  })
+
+  it('runs the setup steps first, with the recorded settings', async () => {
+    const seen: [string, Record<string, unknown> | undefined][] = []
+    const call: BenchCall = async (tool, args) => {
+      seen.push([tool, args])
+      return tool === 'i2c_transfer' ? ok({ ack: true, rx_hex: 'c33c' }) : ok({})
+    }
+    const out = await runSequence(call, stepsFromRows(liveRows(), new Set([2, 3])))
+    expect(seen.map((x) => x[0])).toEqual(['set_pull', 'i2c_open', 'i2c_transfer', 'i2c_transfer'])
+    expect(seen[1][1]).toEqual({ sda: 2, scl: 1, hz: 100000, pullups: 'pod' })
+    expect(out.map((o) => o.status)).toEqual(['ok', 'ok', 'ok', 'ok'])
+  })
+
+  it.skipIf(!python)('the setup exports parse as Python', () => {
+    const steps = stepsFromRows(liveRows(), new Set([2, 3]))
+    expect(pyParse(sequenceToPytest({ name: 'setup', steps }, { names: LIVE_NAMES }))).toBe('ok')
+  })
+
+  it('the panel counts the selected steps and labels the setup', async () => {
+    const steps = stepsFromRows(liveRows(), new Set([2, 3]))
+    const store = memStore()
+    wrap(<SequencesPanel store={store} call={async () => ok({})} selected={steps} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save 2 steps' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('2. setup: I2C open SDA LA2 SCL LA1 100 kHz, pod pull-ups')).toBeTruthy()
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'live' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(store.rows).toHaveLength(1))
+    expect(store.rows[0].version).toBe(2)
+    expect(await screen.findByText('2 steps + setup')).toBeTruthy()
   })
 })
 

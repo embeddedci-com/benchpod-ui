@@ -1,4 +1,4 @@
-export { SequencesPanel, stepLabel, type SequencesPanelProps } from './SequencesPanel'
+export { SequencesPanel, stepCount, stepLabel, type SequencesPanelProps } from './SequencesPanel'
 export { sequenceToPytest, pytestFileName, slug, type PytestOptions } from './pytest'
 export { runSequence, type StepOutcome } from './run'
 export { httpSequenceStore, type ApiRequest } from './httpStore'
@@ -9,6 +9,7 @@ export {
   expectFrom,
   stepDiff,
   stepFromRow,
+  setupFromRows,
   stepsFromRows,
   toolProto,
   type BusSequence,
