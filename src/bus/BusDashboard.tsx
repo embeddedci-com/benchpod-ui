@@ -32,6 +32,22 @@ const SAVED_ROWS = 200
 const logs = new Map<string, BusLogRow[]>()
 const storageKey = (k: string) => `benchpod-bus-log:${k}`
 
+/** The I2C session the log last saw: the newest i2c_open that ran, unless an i2c_close came after. */
+export function i2cSessionFromLog(rows: BusLogRow[]): { open: boolean; sda?: number; scl?: number; hz?: number; pullups?: string } | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i]
+    if (r.status === 'error' || r.status === 'declined') continue
+    if (r.tool === 'i2c_close') return { open: false }
+    if (r.tool === 'i2c_open') {
+      const d = (r.data ?? {}) as Record<string, unknown>
+      const a = r.args ?? {}
+      const n = (v: unknown) => (typeof v === 'number' ? v : undefined)
+      return { open: true, sda: n(d.sda) ?? n(a.sda), scl: n(d.scl) ?? n(a.scl), hz: n(d.hz) ?? n(a.hz), pullups: String(d.pullups ?? a.pullups ?? 'pod') }
+    }
+  }
+  return null
+}
+
 export function loadLog(key: string): BusLogRow[] {
   const mem = logs.get(key)
   if (mem) return mem
@@ -95,6 +111,7 @@ export function BusDashboard({
   const [pinsKey, setPinsKey] = useState(0)
   const nextId = useRef(rows.reduce((m, r) => Math.max(m, r.id), 0) + 1)
   useEffect(() => saveLog(logKey, rows), [logKey, rows])
+  const knownI2c = useMemo(() => i2cSessionFromLog(rows), [rows])
 
   useEffect(() => {
     void call('wiring', {}, { poll: true }).then((r) => setWiring(benchData<Wiring>(r) ?? null))
@@ -229,7 +246,7 @@ export function BusDashboard({
             </Tabs.List>
             {consoleTab ? <Tabs.Panel value="console">{renderConsole ? <div style={{ height: 360 }}>{renderConsole(calls.uart)}</div> : null}</Tabs.Panel> : null}
             <Tabs.Panel value="i2c">
-              <I2cTab call={calls.i2c} wiredSda={wired('i2c_sda')} wiredScl={wired('i2c_scl')} sendCapture={senders.i2c} fill={again?.bus === 'i2c' ? again : null} onFilled={filled} onChange={pinsChanged} />
+              <I2cTab call={calls.i2c} knownSession={knownI2c} wiredSda={wired('i2c_sda')} wiredScl={wired('i2c_scl')} sendCapture={senders.i2c} fill={again?.bus === 'i2c' ? again : null} onFilled={filled} onChange={pinsChanged} />
             </Tabs.Panel>
             <Tabs.Panel value="spi">
               <SpiTab call={calls.spi} wired={{ sck: wired('spi_sclk'), mosi: wired('spi_mosi'), miso: wired('spi_miso'), cs: wired('spi_cs') }} sendCapture={senders.spi} fill={again?.bus === 'spi' ? again : null} onFilled={filled} onChange={pinsChanged} />
