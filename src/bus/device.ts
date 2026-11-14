@@ -94,6 +94,14 @@ export function parseDevice(yaml: string): DeviceDef | string {
     return null
   }
 
+  // No name: a field that is a bare param (`s16le: T2`) is named by it, else by the address.
+  const regName = (e: Obj, t: FieldType): string => {
+    if (typeof e.name === 'string') return e.name
+    const v = e[t]
+    if (typeof v === 'string' && /^[A-Za-z_]\w*$/.test(v)) return v
+    return `0x${(e.at as number).toString(16).padStart(2, '0')}`
+  }
+
   for (const e of Array.isArray(doc.registers) ? doc.registers : []) {
     if (!isObj(e) || typeof e.at !== 'number') continue
     const f = field(e)
@@ -101,7 +109,7 @@ export function parseDevice(yaml: string): DeviceDef | string {
     def.regs.push({
       id: def.regs.length,
       at: at(e.at),
-      name: typeof e.name === 'string' ? e.name : `0x${e.at.toString(16).padStart(2, '0')}`,
+      name: regName(e, f.type),
       type: f.type,
       size: f.size,
       writable: e.writable !== false,

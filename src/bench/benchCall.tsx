@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { Button, Group, Modal, Stack, Text } from '@mantine/core'
-import { callSummary } from '../chat/ChatView'
 
 // The bench controls (power, console, captures, outputs) call the BenchPod MCP tools by hand,
 // through the host's tool endpoint, which applies the same policy as the agent:
@@ -24,7 +23,15 @@ export type BenchResult = {
   ms?: number
 }
 
-export type BenchCallOptions = { poll?: boolean; signal?: AbortSignal }
+export type BenchCallOptions = {
+  poll?: boolean
+  signal?: AbortSignal
+  /**
+   * The user already said yes to this call as part of a batch (device mode "Read all", a saved
+   * sequence step after the first): send it confirmed, without a dialog of its own.
+   */
+  approved?: boolean
+}
 
 /** Runs one tool by hand. Resolves with the result; a refusal or tool error is a result, not a throw. */
 export type BenchCall = (tool: string, args?: Record<string, unknown>, opts?: BenchCallOptions) => Promise<BenchResult>
@@ -44,6 +51,25 @@ export function benchData<T>(r: BenchResult): T | undefined {
   } catch {
     return undefined
   }
+}
+
+/** Arguments holding an address or id, shown in hex. */
+const HEX_KEYS = new Set(['addr', 'address', 'reg', 'can_id', 'id', 'mask'])
+/** Arguments holding bytes, shown as hex bytes. */
+const BYTE_KEYS = new Set(['data', 'bytes', 'write', 'tx'])
+
+const hex = (n: number, w = 2) => '0x' + n.toString(16).toUpperCase().padStart(w, '0')
+
+/** The confirm dialog's lines: every argument in full, addresses and bytes in hex. */
+export function confirmLines(args: Record<string, unknown>): [string, string][] {
+  return Object.entries(args).map(([k, v]) => {
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && HEX_KEYS.has(k)) return [k, `${hex(v)} (${v})`]
+    if (Array.isArray(v) && BYTE_KEYS.has(k) && v.every((x) => typeof x === 'number')) {
+      return [k, v.length ? v.map((x) => (x as number).toString(16).toUpperCase().padStart(2, '0')).join(' ') : '(none)']
+    }
+    if (typeof v === 'string') return [k, v]
+    return [k, JSON.stringify(v)]
+  })
 }
 
 async function post(base: string, tool: string, args: Record<string, unknown>, confirmed: boolean, opts?: BenchCallOptions): Promise<BenchResult> {
@@ -68,6 +94,7 @@ export function useBenchCall(base: string): { call: BenchCall; dialog: ReactNode
   const call = useCallback<BenchCall>(
     async (tool, args = {}, opts) => {
       try {
+        if (opts?.approved) return await post(base, tool, args, true, opts)
         const first = await post(base, tool, args, false, opts)
         if (!first.confirm) return first
         const ok = await new Promise<boolean>((resolve) => {
@@ -95,9 +122,19 @@ export function useBenchCall(base: string): { call: BenchCall; dialog: ReactNode
     <Modal opened={!!pending} onClose={() => close(false)} title="Change the hardware?" centered size="md">
       {pending ? (
         <Stack gap="md">
-          <Text size="sm" ff="monospace" style={{ wordBreak: 'break-all' }}>
-            {callSummary({ id: '', name: pending.tool, arguments: JSON.stringify(pending.args) }, 300)}
-          </Text>
+          <Stack gap={2}>
+            <Text size="sm" fw={600} ff="monospace">
+              {pending.tool}
+            </Text>
+            {confirmLines(pending.args).map(([k, v]) => (
+              <Text key={k} size="sm" ff="monospace" style={{ wordBreak: 'break-all' }}>
+                <Text span c="dimmed" ff="monospace" inherit>
+                  {k}:
+                </Text>{' '}
+                {v}
+              </Text>
+            ))}
+          </Stack>
           <Group justify="flex-end" gap="xs">
             <Button variant="default" onClick={() => close(false)}>
               Cancel

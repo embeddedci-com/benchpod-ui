@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { useEffect } from 'react'
-import { benchData, benchError, useBenchCall, type BenchResult } from './benchCall'
+import { benchData, benchError, confirmLines, useBenchCall, type BenchResult } from './benchCall'
 
 beforeAll(() => {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as never
@@ -47,6 +47,41 @@ describe('useBenchCall', () => {
     const r = onResult.mock.calls[0][0] as BenchResult
     expect(r.declined).toBe(true)
     expect(benchError(r)).toBeUndefined()
+  })
+})
+
+describe('confirmLines', () => {
+  it('shows addresses in hex, bytes as hex, and nothing cut short', () => {
+    const long = 'ab'.repeat(80)
+    expect(confirmLines({ addr: 66, write_hex: long, read: 2, data: [1, 255], can_id: 0x123 })).toEqual([
+      ['addr', '0x42 (66)'],
+      ['write_hex', long],
+      ['read', '2'],
+      ['data', '01 FF'],
+      ['can_id', '0x123 (291)'],
+    ])
+  })
+})
+
+describe('approved calls', () => {
+  it('go confirmed at once, with no dialog', async () => {
+    const bodies: { confirmed: boolean }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string))
+      return new Response(JSON.stringify({ text: 'ok' }))
+    }))
+    const onResult = vi.fn()
+    function H() {
+      const { call, dialog } = useBenchCall('/api/tool')
+      useEffect(() => {
+        void call('i2c_transfer', { addr: 0x76, write_hex: 'd0', read: 1 }, { approved: true }).then(onResult)
+      }, [call])
+      return <MantineProvider>{dialog}</MantineProvider>
+    }
+    render(<H />)
+    await waitFor(() => expect(onResult).toHaveBeenCalled())
+    expect(bodies.map((b) => b.confirmed)).toEqual([true])
+    expect(screen.queryByText('Run it')).toBeNull()
   })
 })
 
