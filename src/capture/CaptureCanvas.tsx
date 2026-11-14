@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type TouchEvent } from 'react'
 import { Box, Button, Group, Stack, useMantineColorScheme } from '@mantine/core'
+import { axisLabel, niceStep, readoutLabel, valueLabel } from './axisFormat'
 
 /** One run-length LA edge: from sample `i` on, all 14 channels read `w` (bit n = LA(n+1)). */
 export type LaEdge = { i: number; w: number }
@@ -471,8 +472,8 @@ export function CaptureCanvas({
           ctx.textAlign = 'right'
           ctx.textBaseline = 'middle'
           ctx.fillStyle = colors.label
-          ctx.fillText(`${vmax.toFixed(2)} ${dacTrack.unit}`, gl - 6, innerT + 2)
-          ctx.fillText(`${vmin.toFixed(2)} ${dacTrack.unit}`, gl - 6, innerB - 2)
+          ctx.fillText(valueLabel(vmax, vmax - vmin, dacTrack.unit), gl - 6, innerT + 2)
+          ctx.fillText(valueLabel(vmin, vmax - vmin, dacTrack.unit), gl - 6, innerB - 2)
           ctx.textAlign = 'left'
           ctx.textBaseline = 'alphabetic'
         } else {
@@ -573,25 +574,23 @@ export function CaptureCanvas({
         const yForV = (v: number) => innerB - ((v - vmin) / vSpan) * (innerB - innerT)
 
         // Horizontal voltage gridlines + gutter labels at "nice" volt steps.
-        const rawStep = vSpan / 5
-        const mag = Math.pow(10, Math.floor(Math.log10(rawStep)))
-        const norm = rawStep / mag
-        const niceStep = (norm >= 5 ? 5 : norm >= 2 ? 2 : 1) * mag
+        const step = niceStep(vSpan)
         ctx.font = '11px ui-monospace, monospace'
         ctx.textAlign = 'right'
         ctx.textBaseline = 'middle'
-        const vStart = Math.ceil(vmin / niceStep) * niceStep
-        for (let v = vStart; v <= vmax; v += niceStep) {
+        const first = Math.ceil(vmin / step)
+        for (let i = first; i * step <= vmax; i++) {
+          const v = i * step
           const y = yForV(v)
           if (y < adcTop || y > adcBot) continue
-          ctx.strokeStyle = Math.abs(v) < niceStep / 2 ? colors.axisMid : colors.grid
+          ctx.strokeStyle = i === 0 ? colors.axisMid : colors.grid
           ctx.lineWidth = 1
           ctx.beginPath()
           ctx.moveTo(gl, y)
           ctx.lineTo(gr, y)
           ctx.stroke()
           ctx.fillStyle = colors.label
-          ctx.fillText(`${niceStep < 1 ? v.toFixed(2) : v.toFixed(1)} ${adcUnit}`, gl - 6, y)
+          ctx.fillText(axisLabel(v, step, adcUnit, Math.max(Math.abs(vmin), Math.abs(vmax))), gl - 6, y)
         }
         ctx.textAlign = 'left'
         ctx.textBaseline = 'alphabetic'
@@ -812,7 +811,7 @@ export function CaptureCanvas({
         if (showAdc && adcRateHz && adcVolts.length > 0) {
           const idx = Math.max(0, Math.min(adcVolts.length - 1, Math.round(tHover * adcRateHz)))
           const v = adcVolts[idx]
-          if (Number.isFinite(v)) readout += `   ${v.toFixed(3)} ${adcUnit}`
+          if (Number.isFinite(v)) readout += `   ${readoutLabel(v, adcUnit)}`
         }
         ctx.font = '11px ui-monospace, monospace'
         const boxW = ctx.measureText(readout).width + 12
