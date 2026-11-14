@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type TouchEvent } from 'react'
-import { Box, Button, Group, Stack, useMantineColorScheme } from '@mantine/core'
+import { Box, Button, Group, Stack, useComputedColorScheme } from '@mantine/core'
 import { axisLabel, niceStep, readoutLabel, valueLabel } from './axisFormat'
 
 /** One run-length LA edge: from sample `i` on, all 14 channels read `w` (bit n = LA(n+1)). */
@@ -913,7 +913,8 @@ export function CaptureCanvas({
 
 /** The canvas palette for the current light or dark color scheme. */
 export function useCanvasColors(): CanvasColors {
-  const { colorScheme } = useMantineColorScheme()
+  // "auto" follows the computer: the computed scheme is light or dark, never auto.
+  const colorScheme = useComputedColorScheme('light')
   return useMemo<CanvasColors>(() => {
     if (colorScheme === 'dark') {
       return {
