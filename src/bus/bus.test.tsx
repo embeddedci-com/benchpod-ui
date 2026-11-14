@@ -169,6 +169,32 @@ describe('PinStrip', () => {
 })
 
 describe('I2cTab', () => {
+  it('offers to switch the pull-ups on when Open needs them, then opens', async () => {
+    let pulled = false
+    const { call, seen } = fake({
+      la_pins: () => ok({ pins: [{ la: 1, function: 'none', pull_on: false }, { la: 2, function: 'none', pull_on: false }] }),
+      set_pull: () => ((pulled = true), ok({})),
+      i2c_open: (a) => (pulled ? ok({ open: true, sda: a.sda, scl: a.scl, hz: 100000, pullups: 'pod' }) : err('i2c_start: I2C needs pull-ups: switch on LA2 with set_pull(las=[2], enabled=true)')),
+    })
+    wrap(<I2cTab call={call} wiredSda={1} wiredScl={2} />)
+    await waitFor(() => expect(screen.getByTestId('i2c-pull-hint').textContent).toContain('off on LA1 and LA2'))
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch them on and open' }))
+    await waitFor(() => expect(screen.getByTestId('i2c-session').textContent).toContain('open: SDA LA1, SCL LA2'))
+    expect(screen.queryByText(/set_pull\(/)).toBeNull()
+    expect(screen.getByTestId('i2c-pull-hint').textContent).toBe("The pod's pull-ups are on for LA1 and LA2.")
+    expect(seen.find((x) => x.tool === 'set_pull')?.args).toEqual({ las: [1, 2], enabled: true })
+  })
+
+  it('shows a session that was open before it mounted', async () => {
+    const { call } = fake({
+      la_pins: () => ok({ pins: [{ la: 3, function: 'i2cm_sda', pull_on: true }, { la: 4, function: 'i2cm_scl', pull_on: true }] }),
+    })
+    wrap(<I2cTab call={call} wiredSda={1} wiredScl={2} />)
+    await waitFor(() => expect(screen.getByTestId('i2c-session').textContent).toContain('open: SDA LA3, SCL LA4'))
+    expect(screen.getByRole('button', { name: 'Open again' })).toBeTruthy()
+  })
+
   it('opens on the wired pins, sends and shows ACK and the bytes read', async () => {
     const { call, seen } = fake({
       i2c_open: (a) => ok({ open: true, sda: a.sda, scl: a.scl, hz: 400000, pullups: a.pullups }),
