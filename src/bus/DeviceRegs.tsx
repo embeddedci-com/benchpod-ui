@@ -48,7 +48,7 @@ export function DeviceRegs({
       const e = benchError(r)
       if (e) setError(e)
       const d = benchData<{ entries: Entry[] }>(r)
-      setEntries(d ? d.entries.filter((x) => x.kind === bus) : [])
+      setEntries((d?.entries ?? []).filter((x) => x.kind === bus))
     })
     return () => {
       live = false
