@@ -24,6 +24,34 @@ type Wiring = { pins?: { la: number; wired_to?: string | null }[] }
 
 const MAX_ROWS = 500
 const UART_LOGGED = new Set(['uart_open', 'uart_write', 'uart_close'])
+/** Rows kept for a reload (the browser tab's session storage); the in-page copy keeps them all. */
+const SAVED_ROWS = 200
+
+// The log outlives the dashboard: a host that remounts it (a narrow window, another tab) or a
+// reload shows the same rows. In memory per logKey, and in session storage for a reload.
+const logs = new Map<string, BusLogRow[]>()
+const storageKey = (k: string) => `benchpod-bus-log:${k}`
+
+export function loadLog(key: string): BusLogRow[] {
+  const mem = logs.get(key)
+  if (mem) return mem
+  try {
+    const v = JSON.parse(sessionStorage.getItem(storageKey(key)) ?? '[]')
+    return Array.isArray(v) ? (v as BusLogRow[]) : []
+  } catch {
+    return []
+  }
+}
+
+function saveLog(key: string, rows: BusLogRow[]) {
+  logs.set(key, rows)
+  try {
+    const text = JSON.stringify(rows.slice(-SAVED_ROWS))
+    if (text.length < 1_000_000) sessionStorage.setItem(storageKey(key), text)
+  } catch {
+    // Storage off or full: the in-page copy still holds them.
+  }
+}
 
 export function BusDashboard({
   call,
@@ -36,6 +64,7 @@ export function BusDashboard({
   pins = true,
   consoleTab = true,
   onPinsChange,
+  logKey = 'default',
 }: {
   call: BenchCall
   fetchCapture: FetchCapture
@@ -56,13 +85,16 @@ export function BusDashboard({
   consoleTab?: boolean
   /** Called after each call that may change the pins, for a pin strip the host draws. */
   onPinsChange?: () => void
+  /** Whose log this is (the pod's id, say): the rows are kept per key across remounts and reloads. */
+  logKey?: string
 }) {
   const [picked, setPicked] = useState<Set<number>>(() => new Set())
   const [tab, setTab] = useState<string>(!consoleTab && initialTab === 'console' ? 'i2c' : initialTab)
-  const [rows, setRows] = useState<BusLogRow[]>([])
+  const [rows, setRows] = useState<BusLogRow[]>(() => loadLog(logKey))
   const [wiring, setWiring] = useState<Wiring | null>(null)
   const [pinsKey, setPinsKey] = useState(0)
-  const nextId = useRef(1)
+  const nextId = useRef(rows.reduce((m, r) => Math.max(m, r.id), 0) + 1)
+  useEffect(() => saveLog(logKey, rows), [logKey, rows])
 
   useEffect(() => {
     void call('wiring', {}, { poll: true }).then((r) => setWiring(benchData<Wiring>(r) ?? null))

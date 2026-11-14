@@ -35,7 +35,7 @@ function unnamedFields(root: HTMLElement): string[] {
 
 describe('bus console accessibility', () => {
   it('names every field in the I2C, SPI, CAN and GPIO tabs and in device mode', async () => {
-    wrap(<BusDashboard call={call} fetchCapture={(async () => ({})) as never} />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={(async () => ({})) as never} />)
     await screen.findByRole('button', { name: 'Scan' })
     for (const tab of ['I2C', 'SPI', 'CAN', 'GPIO']) {
       fireEvent.click(screen.getByRole('tab', { name: tab }))

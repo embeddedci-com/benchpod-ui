@@ -311,7 +311,7 @@ describe('BusDashboard', () => {
       i2c_transfer: () => err('no I2C session: call i2c_open first'),
     })
     const fetchCapture = (async () => ({ seq: 0 })) as never
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Scan' }))
     await screen.findByTestId('i2c-scan')
     fireEvent.change(screen.getByLabelText('Address'), { target: { value: '0x76' } })
@@ -324,6 +324,22 @@ describe('BusDashboard', () => {
     expect(oldest.textContent).toContain('scan 0x08..0x77')
     expect(oldest.textContent).toContain('0x76')
     expect(oldest.textContent).toContain('I2C')
+  })
+
+  it('keeps the log when it is mounted again (a narrow window, a reload)', async () => {
+    const { call } = fake({
+      wiring: () => ok({ pins: [] }),
+      la_pins: () => ok(pins()),
+      i2c_scan: () => ok({ found: [0x76], found_hex: ['0x76'] }),
+    })
+    const fetchCapture = (async () => ({ seq: 0 })) as never
+    const first = wrap(<BusDashboard logKey="remount" call={call} fetchCapture={fetchCapture} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan' }))
+    await waitFor(() => expect(within(screen.getByTestId('bus-log')).getAllByRole('row')).toHaveLength(2))
+    first.unmount()
+    wrap(<BusDashboard logKey="remount" call={call} fetchCapture={fetchCapture} />)
+    expect(within(await screen.findByTestId('bus-log')).getAllByRole('row')).toHaveLength(2)
+    expect(JSON.parse(sessionStorage.getItem('benchpod-bus-log:remount') ?? '[]')).toHaveLength(1)
   })
 })
 
@@ -348,7 +364,7 @@ describe('send and capture', () => {
       decode_la: () => ok({ protocol: 'i2c', transactions: 1 }),
     })
     const fetchCapture = vi.fn(async (kind: string) => (kind === 'la' ? { seq, sample_rate_hz: 1e6, count: 2112, edges: [] } : { seq: 0 })) as never
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} />)
     fireEvent.change(await screen.findByLabelText('Address'), { target: { value: '0x76' } })
     fireEvent.change(screen.getByLabelText('Write (hex)'), { target: { value: 'd0' } })
     fireEvent.change(screen.getByLabelText('Read bytes'), { target: { value: '1' } })
@@ -381,7 +397,7 @@ describe('send and capture', () => {
     })
     const fetchCapture = vi.fn(async (kind: string) => (kind === 'la' ? { seq: 5, sample_rate_hz: 1e6, count: 2112, edges: [] } : { seq: 0 })) as never
     const onPinsChange = vi.fn()
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} capture="after-send" pins={false} consoleTab={false} onPinsChange={onPinsChange} />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} capture="after-send" pins={false} consoleTab={false} onPinsChange={onPinsChange} />)
     fireEvent.change(await screen.findByLabelText('Address'), { target: { value: '0x76' } })
     expect(screen.queryByTestId('pin-strip')).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Console' })).toBeNull()
@@ -405,7 +421,7 @@ describe('send and capture', () => {
       capture_la: () => ok({ samples: 2048, sample_rate_hz: 1e6, channels: [], send: { bus: 'gpio', error: 'gpio send: LA3 is not a GPIO output' } }),
     })
     const fetchCapture = (async () => ({ seq: 3, sample_rate_hz: 1e6, count: 2048, edges: [] })) as never
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
     fireEvent.click(await screen.findByLabelText('Capture it'))
     fireEvent.click(screen.getByRole('button', { name: 'Write 1' }))
     expect(await screen.findAllByText(/gpio send: LA3 is not a GPIO output/)).toHaveLength(2)
@@ -445,7 +461,7 @@ describe('send again', () => {
         : kind === 'decode'
           ? { seq: 5, protocol: 'i2c', channels: { sda: 1, scl: 2 }, transactions: [t] }
           : { seq: 0 }) as never
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Fill the send box with transaction 1' }))
     expect(((await screen.findByLabelText('Write (hex)')) as HTMLInputElement).value).toBe('d0')
     expect((screen.getByLabelText('Address') as HTMLInputElement).value).toBe('0x76')
