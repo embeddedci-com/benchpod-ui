@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import { Button, Group, Modal, Stack, Text } from '@mantine/core'
 
 // The bench controls (power, console, captures, outputs) call the BenchPod MCP tools by hand,
@@ -83,43 +83,52 @@ async function post(base: string, tool: string, args: Record<string, unknown>, c
   return (await r.json()) as BenchResult
 }
 
+/** A call that waits for the user's yes, and how to answer it. */
+type Pending = { tool: string; args: Record<string, unknown>; resolve: (ok: boolean) => void }
+
 /**
- * A BenchCall against the host's tool endpoint, and the dialog that asks before a risky call.
- * Render `dialog` once in the page.
+ * The confirm dialog's state, outside React: asking re-renders only the dialog, not the page that
+ * holds the BenchCall (a whole workspace, which made the dialog late on a busy page).
  */
-export function useBenchCall(base: string): { call: BenchCall; dialog: ReactNode } {
-  const [pending, setPending] = useState<{ tool: string; args: Record<string, unknown> } | null>(null)
-  const answer = useRef<((ok: boolean) => void) | null>(null)
+export type ConfirmStore = {
+  /** Shows the dialog for this call; resolves with the user's answer. A new ask declines the old one. */
+  ask(tool: string, args: Record<string, unknown>): Promise<boolean>
+  get(): Pending | null
+  subscribe(fn: () => void): () => void
+  answer(ok: boolean): void
+}
 
-  const call = useCallback<BenchCall>(
-    async (tool, args = {}, opts) => {
-      try {
-        if (opts?.approved) return await post(base, tool, args, true, opts)
-        const first = await post(base, tool, args, false, opts)
-        if (!first.confirm) return first
-        const ok = await new Promise<boolean>((resolve) => {
-          answer.current?.(false)
-          answer.current = resolve
-          setPending({ tool, args })
-        })
-        if (!ok) return { text: 'not run: you declined it', declined: true }
-        return await post(base, tool, args, true, opts)
-      } catch (e) {
-        if ((e as Error).name === 'AbortError') return { text: 'stopped', declined: true }
-        return { text: (e as Error).message, is_error: true }
-      }
-    },
-    [base],
-  )
-
-  const close = (ok: boolean) => {
-    answer.current?.(ok)
-    answer.current = null
-    setPending(null)
+export function createConfirmStore(): ConfirmStore {
+  let pending: Pending | null = null
+  const subs = new Set<() => void>()
+  const set = (p: Pending | null) => {
+    pending = p
+    for (const f of subs) f()
   }
+  return {
+    ask: (tool, args) =>
+      new Promise<boolean>((resolve) => {
+        pending?.resolve(false)
+        set({ tool, args, resolve })
+      }),
+    get: () => pending,
+    subscribe: (fn) => {
+      subs.add(fn)
+      return () => subs.delete(fn)
+    },
+    answer: (ok) => {
+      const p = pending
+      set(null)
+      p?.resolve(ok)
+    },
+  }
+}
 
-  const dialog = (
-    <Modal opened={!!pending} onClose={() => close(false)} title="Change the hardware?" centered size="md">
+/** The "Change the hardware?" dialog for a ConfirmStore. Render it once in the page. */
+export function ConfirmDialog({ store }: { store: ConfirmStore }) {
+  const pending = useSyncExternalStore(store.subscribe, store.get, store.get)
+  return (
+    <Modal opened={!!pending} onClose={() => store.answer(false)} title="Change the hardware?" centered size="md">
       {pending ? (
         <Stack gap="md">
           <Stack gap={2}>
@@ -136,10 +145,10 @@ export function useBenchCall(base: string): { call: BenchCall; dialog: ReactNode
             ))}
           </Stack>
           <Group justify="flex-end" gap="xs">
-            <Button variant="default" onClick={() => close(false)}>
+            <Button variant="default" onClick={() => store.answer(false)}>
               Cancel
             </Button>
-            <Button onClick={() => close(true)} data-autofocus>
+            <Button onClick={() => store.answer(true)} data-autofocus>
               Run it
             </Button>
           </Group>
@@ -147,6 +156,31 @@ export function useBenchCall(base: string): { call: BenchCall; dialog: ReactNode
       ) : null}
     </Modal>
   )
+}
 
-  return { call, dialog }
+/**
+ * A BenchCall against the host's tool endpoint, and the dialog that asks before a risky call.
+ * Render `dialog` once in the page.
+ */
+export function useBenchCall(base: string): { call: BenchCall; dialog: ReactNode } {
+  const store = useMemo(createConfirmStore, [])
+
+  const call = useCallback<BenchCall>(
+    async (tool, args = {}, opts) => {
+      try {
+        if (opts?.approved) return await post(base, tool, args, true, opts)
+        const first = await post(base, tool, args, false, opts)
+        if (!first.confirm) return first
+        const ok = await store.ask(tool, args)
+        if (!ok) return { text: 'not run: you declined it', declined: true }
+        return await post(base, tool, args, true, opts)
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return { text: 'stopped', declined: true }
+        return { text: (e as Error).message, is_error: true }
+      }
+    },
+    [base, store],
+  )
+
+  return { call, dialog: <ConfirmDialog store={store} /> }
 }

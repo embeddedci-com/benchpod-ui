@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { useEffect } from 'react'
-import { benchData, benchError, confirmLines, useBenchCall, type BenchResult } from './benchCall'
+import { benchData, benchError, confirmLines, createConfirmStore, useBenchCall, type BenchResult } from './benchCall'
 
 beforeAll(() => {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as never
@@ -60,6 +60,22 @@ describe('confirmLines', () => {
       ['data', '01 FF'],
       ['can_id', '0x123 (291)'],
     ])
+  })
+})
+
+describe('createConfirmStore', () => {
+  it('answers the pending ask, and a new ask declines the old one', async () => {
+    const st = createConfirmStore()
+    const seen = vi.fn()
+    st.subscribe(seen)
+    const first = st.ask('power_on', { efuse: 1 })
+    const second = st.ask('i2c_open', { sda: 2 })
+    await expect(first).resolves.toBe(false)
+    expect(st.get()?.tool).toBe('i2c_open')
+    st.answer(true)
+    await expect(second).resolves.toBe(true)
+    expect(st.get()).toBeNull()
+    expect(seen).toHaveBeenCalledTimes(3)
   })
 })
 

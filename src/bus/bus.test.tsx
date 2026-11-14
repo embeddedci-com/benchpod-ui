@@ -24,9 +24,9 @@ const err = (text: string): BenchResult => ({ text, is_error: true })
 
 /** A fake BenchCall: a handler per tool, and the calls it saw. */
 function fake(handlers: Record<string, (args: Record<string, unknown>) => BenchResult>) {
-  const seen: { tool: string; args: Record<string, unknown>; poll?: boolean }[] = []
+  const seen: { tool: string; args: Record<string, unknown>; poll?: boolean; approved?: boolean }[] = []
   const call: BenchCall = vi.fn(async (tool, args = {}, opts) => {
-    seen.push({ tool, args, poll: opts?.poll })
+    seen.push({ tool, args, poll: opts?.poll, approved: opts?.approved })
     const h = handlers[tool]
     return h ? h(args) : err(`unknown tool ${tool}`)
   })
@@ -184,6 +184,21 @@ describe('I2cTab', () => {
     expect(screen.queryByText(/set_pull\(/)).toBeNull()
     expect(screen.getByTestId('i2c-pull-hint').textContent).toBe("The pod's pull-ups are on for LA1 and LA2.")
     expect(seen.find((x) => x.tool === 'set_pull')?.args).toEqual({ las: [1, 2], enabled: true })
+    // one yes covers both: the open after the pull-ups goes as approved
+    expect(seen.filter((x) => x.tool === 'i2c_open').map((x) => !!x.approved)).toEqual([false, true])
+  })
+
+  it('says the pull-ups are off once the wiring arrives after the first render', async () => {
+    const { call } = fake({ la_pins: () => ok({ pins: [{ la: 1, function: 'none', pull_on: false }, { la: 2, function: 'none', pull_on: false }] }) })
+    const r = wrap(<I2cTab call={call} />)
+    r.rerender(<MantineProvider><I2cTab call={call} wiredSda={2} wiredScl={1} /></MantineProvider>)
+    await waitFor(() => expect(screen.getByTestId('i2c-pull-hint').textContent).toContain('are off on LA2 and LA1'))
+  })
+
+  it('shows the session the log last opened when the pins cannot tell', async () => {
+    const { call } = fake({ la_pins: () => ok({ pins: [{ la: 1, function: 'none' }, { la: 2, function: 'none' }] }) })
+    wrap(<I2cTab call={call} wiredSda={2} wiredScl={1} knownSession={{ open: true, sda: 2, scl: 1, hz: 400000, pullups: 'pod' }} />)
+    await waitFor(() => expect(screen.getByTestId('i2c-session').textContent).toContain('open: SDA LA2, SCL LA1'))
   })
 
   it('shows a session that was open before it mounted', async () => {
@@ -340,6 +355,17 @@ describe('BusDashboard', () => {
     wrap(<BusDashboard logKey="remount" call={call} fetchCapture={fetchCapture} />)
     expect(within(await screen.findByTestId('bus-log')).getAllByRole('row')).toHaveLength(2)
     expect(JSON.parse(sessionStorage.getItem('benchpod-bus-log:remount') ?? '[]')).toHaveLength(1)
+  })
+})
+
+describe('i2cSessionFromLog', () => {
+  it('takes the newest open that ran, unless a close came after', async () => {
+    const { i2cSessionFromLog } = await import('./BusDashboard')
+    const row = (tool: string, status: string, data?: unknown, args: Record<string, unknown> = {}) => ({ id: 0, time: 0, proto: 'I2C', tool, out: '', in: '', status, args, data }) as never
+    expect(i2cSessionFromLog([])).toBeNull()
+    expect(i2cSessionFromLog([row('i2c_open', 'ok', { open: true, sda: 2, scl: 1, hz: 100000, pullups: 'pod' })])).toEqual({ open: true, sda: 2, scl: 1, hz: 100000, pullups: 'pod' })
+    expect(i2cSessionFromLog([row('i2c_open', 'ok', { sda: 2, scl: 1 }), row('i2c_close', 'ok')])).toEqual({ open: false })
+    expect(i2cSessionFromLog([row('i2c_close', 'ok'), row('i2c_open', 'error', undefined, { sda: 5, scl: 6 })])).toEqual({ open: false })
   })
 })
 

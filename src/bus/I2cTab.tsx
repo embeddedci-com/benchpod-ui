@@ -45,6 +45,7 @@ export function I2cTab({
   fill,
   onFilled,
   onChange,
+  knownSession,
 }: {
   call: BenchCall
   /** The wiring's i2c_sda and i2c_scl channels, the default pins. */
@@ -58,6 +59,11 @@ export function I2cTab({
   onFilled?: () => void
   /** A call ran that may have changed the pins. */
   onChange?: () => void
+  /**
+   * The session the log last saw opened (or closed): shown when the tab mounts again, since on a
+   * host that frees the pins between calls the pod's pins cannot tell an open session.
+   */
+  knownSession?: Session | null
 }) {
   const [sda, setSda] = useState<string | null>(wiredSda ? String(wiredSda) : null)
   const [scl, setScl] = useState<string | null>(wiredScl ? String(wiredScl) : null)
@@ -78,23 +84,27 @@ export function I2cTab({
   /** Open was refused for want of pull-ups: offer to switch them on. */
   const [needPull, setNeedPull] = useState(false)
 
-  // A session opened before this tab mounted (a reload, another tab): the pins say so.
+  // A session opened before this tab mounted (a reload, another tab): the pins say so, else the log.
+  const [pinsSeen, setPinsSeen] = useState<{ la: number; function: string; pull_on?: boolean }[] | null>(null)
   useEffect(() => {
     let live = true
     void call('la_pins', {}, { poll: true }).then((r) => {
       const pins = benchData<{ pins: { la: number; function: string; pull_on?: boolean }[] }>(r)?.pins
-      if (!live || !pins) return
-      const at = (f: string) => pins.find((p) => p.function === f || p.function === `i2cm_${f}`)?.la
+      if (!live) return
+      const at = (f: string) => pins?.find((p) => p.function === f || p.function === `i2cm_${f}`)?.la
       const s = at('sda')
       const c = at('scl')
       if (s && c) {
         setSession((o) => o ?? { open: true, sda: s, scl: c })
         setSda(String(s))
         setScl(String(c))
+      } else if (knownSession?.open) {
+        setSession((o) => o ?? knownSession)
+        if (knownSession.sda) setSda(String(knownSession.sda))
+        if (knownSession.scl) setScl(String(knownSession.scl))
+        if (knownSession.hz) setHz(String(knownSession.hz))
       }
-      const a = s ?? wiredSda
-      const b = c ?? wiredScl
-      if (a && b) setPullOn(!!pins.find((p) => p.la === a)?.pull_on && !!pins.find((p) => p.la === b)?.pull_on)
+      if (pins) setPinsSeen(pins)
     })
     return () => {
       live = false
@@ -102,6 +112,12 @@ export function I2cTab({
     // once, on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // The pull-ups on the chosen pins, once both the pins and the pod's answer are known.
+  useEffect(() => {
+    if (!pinsSeen || !sda || !scl) return
+    const on = (la: string) => !!pinsSeen.find((p) => p.la === Number(la))?.pull_on
+    setPullOn(on(sda) && on(scl))
+  }, [pinsSeen, sda, scl])
 
   // The wiring arrives after the first render.
   useEffect(() => {
@@ -125,12 +141,13 @@ export function I2cTab({
 
   const pins = () => ({ ...(sda ? { sda: Number(sda) } : {}), ...(scl ? { scl: Number(scl) } : {}) })
 
-  const open = async () => {
+  /** approved: the user already said yes (to switching the pull-ups on to open). */
+  const open = async (approved = false) => {
     setNeedPull(false)
     setBusy('open')
     setError(undefined)
     try {
-      const r = await call('i2c_open', { ...pins(), hz: Number(hz), pullups })
+      const r = await call('i2c_open', { ...pins(), hz: Number(hz), pullups }, { approved })
       const e = benchError(r)
       if (e && pullups === 'pod' && /needs pull-ups/i.test(e)) {
         setPullOn(false)
@@ -158,15 +175,19 @@ export function I2cTab({
       const e = benchError(r)
       if (e) setError(e)
       const ok = !e && !r.declined
-      if (ok) setPullOn(on)
+      if (ok) {
+        setPullOn(on)
+        setPinsSeen(null)
+      }
       return ok
     } finally {
       setBusy(null)
       onChange?.()
     }
   }
+  // One yes for both: the open after the pull-ups is part of what the user said yes to.
   const pullAndOpen = async () => {
-    if (await pull(true)) await open()
+    if (await pull(true)) await open(true)
   }
   const pinNames = [sda, scl].filter(Boolean).map((v) => `LA${v}`).join(' and ')
 
