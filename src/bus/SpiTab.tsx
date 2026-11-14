@@ -143,6 +143,7 @@ export function SpiTab({
       size="xs"
       w={84}
       label={label}
+      aria-label={label}
       data={LA}
       value={pins[k]}
       onChange={(v) => setPins((p) => ({ ...p, [k]: v }))}
@@ -159,8 +160,8 @@ export function SpiTab({
         {pin('mosi', 'MOSI')}
         {pin('miso', 'MISO')}
         {pin('cs', 'CS')}
-        <Select size="xs" w={160} label="Mode" data={MODES} value={mode} onChange={(v) => v && setMode(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
-        <Select size="xs" w={96} label="Rate" data={RATES} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={160} label="Mode" aria-label="Mode" data={MODES} value={mode} onChange={(v) => v && setMode(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={96} label="Rate" aria-label="Rate" data={RATES} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
       </Group>
       <Text size="xs" c="dimmed">
         CS goes low for all the bytes of one send. The pod rounds the rate down to one it can run. Modes 1 and 2 need gateware v55 or later.
@@ -168,7 +169,7 @@ export function SpiTab({
 
       <Group gap="xs" wrap="nowrap">
         <Divider label={device ? 'Device' : 'Send'} labelPosition="left" style={{ flex: 1 }} />
-        <Switch size="xs" label="Device mode" checked={device} onChange={(e) => setDevice(e.currentTarget.checked)} />
+        <Switch size="xs" label="Device mode" aria-label="Device mode" checked={device} onChange={(e) => setDevice(e.currentTarget.checked)} />
       </Group>
       {device ? <DeviceRegs bus="spi" call={call} spiTransfer={deviceTransfer} onSpiMode={(m) => setMode(String(m))} /> : null}
       {device ? null : (
@@ -177,7 +178,7 @@ export function SpiTab({
             <TextInput
               size="xs"
               style={{ flex: 1, minWidth: 200 }}
-              label="Out (hex)"
+              label="Out (hex)" aria-label="Out (hex)"
               placeholder="e.g. 9f 00 00 00"
               value={tx}
               onChange={(e) => setTx(e.currentTarget.value)}
@@ -190,7 +191,7 @@ export function SpiTab({
             {sendCapture ? (
               <Checkbox
                 size="xs"
-                label="Capture it"
+                label="Capture it" aria-label="Capture it"
                 checked={capture && onWiring}
                 disabled={!onWiring}
                 title={onWiring ? undefined : "A capture's send runs on the wiring's SPI pins: set them in the wiring, or clear the picks here."}

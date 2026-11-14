@@ -136,10 +136,13 @@ describe('PinStrip', () => {
     for (let la = 1; la <= 14; la++) expect(screen.getByTestId(`pin-${la}`)).toBeTruthy()
     expect(within(screen.getByTestId('pin-3')).getByText('READY')).toBeTruthy()
     expect(within(screen.getByTestId('pin-3')).getByText('gpio')).toBeTruthy()
-    const icon = screen.getByLabelText('LA3 warning')
+    const icon = screen.getByLabelText(/^LA3 warning: /)
+    // Each pin is a named group: the strip reads in words without the hover.
+    expect(screen.getByRole('group', { name: /^LA3, READY, gpio/ })).toBeTruthy()
+    expect(icon.tabIndex).toBe(0) // the explanation opens on focus too
     fireEvent.mouseEnter(icon)
     expect(await screen.findByText(/A pull resistor is on under a pin the pod drives/)).toBeTruthy()
-    expect(screen.queryByLabelText('LA1 warning')).toBeNull()
+    expect(screen.queryByLabelText(/^LA1 warning/)).toBeNull()
     // The warning is also text under the strip, not only a hover.
     expect(screen.getByTestId('pin-warnings').textContent).toContain('LA3: a pull-up is on under a pin the pod drives')
     expect(within(screen.getByTestId('pin-1')).getByText('both')).toBeTruthy()

@@ -91,8 +91,8 @@ export function GpioTab({
   return (
     <Stack gap="xs" p="sm">
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <Select size="xs" w={140} label="Pin" data={data} value={la} onChange={(v) => v && setLa(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
-        <Select size="xs" w={112} label="Mode" data={MODES} value={mode} onChange={(v) => v && setMode(v)} allowDeselect={false} />
+        <Select size="xs" w={140} label="Pin" aria-label="Pin" data={data} value={la} onChange={(v) => v && setLa(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={112} label="Mode" aria-label="Mode" data={MODES} value={mode} onChange={(v) => v && setMode(v)} allowDeselect={false} />
         <Button size="xs" onClick={() => void run('mode', 'gpio_mode', { la: [ch], mode })} loading={busy === 'mode'} disabled={!!busy}>
           Set mode
         </Button>
@@ -110,7 +110,7 @@ export function GpioTab({
         <Button size="xs" variant="light" onClick={() => void read()} loading={busy === 'read'} disabled={!!busy}>
           Read
         </Button>
-        {sendCapture ? <Checkbox size="xs" label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={4} /> : null}
+        {sendCapture ? <Checkbox size="xs" label="Capture it" aria-label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={4} /> : null}
       </Group>
       <Text size="xs" c="dimmed">
         Open drain: 0 pulls the pin low, 1 lets it go. Read works on any pin, whatever owns it.
@@ -119,8 +119,8 @@ export function GpioTab({
 
       <Divider label="Pulse" labelPosition="left" />
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <NumberInput size="xs" w={104} label="Width (ms)" value={widthMs} onChange={(v) => setWidthMs(typeof v === 'number' ? v : '')} min={0.004} max={65.535} step={0.1} decimalScale={3} />
-        <NumberInput size="xs" w={84} label="Count" value={count} onChange={(v) => setCount(typeof v === 'number' ? v : '')} min={1} max={65535} />
+        <NumberInput size="xs" w={104} label="Width (ms)" aria-label="Width (ms)" value={widthMs} onChange={(v) => setWidthMs(typeof v === 'number' ? v : '')} min={0.004} max={65.535} step={0.1} decimalScale={3} />
+        <NumberInput size="xs" w={84} label="Count" aria-label="Count" value={count} onChange={(v) => setCount(typeof v === 'number' ? v : '')} min={1} max={65535} />
         <Button size="xs" variant="light" onClick={() => void run('pulse', 'gpio_pulse', { la: ch, width, count: Number(count) || 1 })} loading={busy === 'pulse'} disabled={!!busy || !width}>
           Pulse
         </Button>
@@ -131,8 +131,8 @@ export function GpioTab({
 
       <Divider label="Wait for a level" labelPosition="left" />
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <Select size="xs" w={70} label="Level" data={['0', '1']} value={waitLevel} onChange={(v) => v && setWaitLevel(v)} allowDeselect={false} />
-        <NumberInput size="xs" w={96} label="Up to (s)" value={timeout} onChange={(v) => setTimeoutS(typeof v === 'number' ? v : '')} min={0} max={600} />
+        <Select size="xs" w={70} label="Level" aria-label="Level" data={['0', '1']} value={waitLevel} onChange={(v) => v && setWaitLevel(v)} allowDeselect={false} />
+        <NumberInput size="xs" w={96} label="Up to (s)" aria-label="Up to (s)" value={timeout} onChange={(v) => setTimeoutS(typeof v === 'number' ? v : '')} min={0} max={600} />
         <Button size="xs" variant="light" onClick={() => void wait()} loading={busy === 'wait'} disabled={!!busy}>
           Wait
         </Button>

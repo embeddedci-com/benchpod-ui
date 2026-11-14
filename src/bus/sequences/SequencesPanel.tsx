@@ -276,10 +276,10 @@ export function SequencesPanel({ store, call, selected, onClearSelection, names 
       <Modal opened={!!saving} onClose={() => setSaving(null)} title={saving?.copyOf ? 'Save a copy' : 'Save as a sequence'} centered size="md">
         {saving ? (
           <Stack gap="sm">
-            <TextInput label="Name" value={saving.name} onChange={(e) => setSaving({ ...saving, name: e.currentTarget.value })} maxLength={128} data-autofocus />
+            <TextInput label="Name" aria-label="Name" value={saving.name} onChange={(e) => setSaving({ ...saving, name: e.currentTarget.value })} maxLength={128} data-autofocus />
             {store.canShare ? (
               <Checkbox
-                label="Share in my organization (the other members can run it and export it, not change it)"
+                label="Share in my organization (the other members can run it and export it, not change it)" aria-label="Share in my organization (the other members can run it and export it, not change it)"
                 checked={saving.shared}
                 onChange={(e) => setSaving({ ...saving, shared: e.currentTarget.checked })}
               />
@@ -306,7 +306,7 @@ export function SequencesPanel({ store, call, selected, onClearSelection, names 
       <Modal opened={!!renaming} onClose={() => setRenaming(null)} title="Rename the sequence" centered size="sm">
         {renaming ? (
           <Stack gap="sm">
-            <TextInput label="Name" value={renaming.name} onChange={(e) => setRenaming({ ...renaming, name: e.currentTarget.value })} maxLength={128} data-autofocus />
+            <TextInput label="Name" aria-label="Name" value={renaming.name} onChange={(e) => setRenaming({ ...renaming, name: e.currentTarget.value })} maxLength={128} data-autofocus />
             <Group justify="flex-end" gap="xs">
               <Button variant="default" onClick={() => setRenaming(null)}>
                 Cancel
