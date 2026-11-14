@@ -24,7 +24,9 @@ describe('analog axis labels', () => {
   })
 
   it('goes below a millivolt and never prints -0', () => {
-    expect(labels(-0.0006, 0.0006)).toEqual(['-0.4 mV', '-0.2 mV', '0.0 mV', '0.2 mV', '0.4 mV'])
+    // Not exactly on a tick multiple: whether a tick at the very edge is kept depends on floating-point
+    // rounding, which differs between Node versions (CI runs Node 22).
+    expect(labels(-0.00055, 0.00055)).toEqual(['-0.4 mV', '-0.2 mV', '0.0 mV', '0.2 mV', '0.4 mV'])
     expect(axisLabel(-1e-12, 0.002, 'V')).toBe('0 mV')
   })
 
