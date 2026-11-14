@@ -21,13 +21,13 @@ const MODES = [
 /** How often "Keep reading" asks for new frames. */
 export const CAN_POLL_MS = 500
 
-/** "0x123", "123h" or "291" as a CAN id; NaN when it is not one or does not fit (11 bits, or 29 with ext). */
+/**
+ * A CAN id in hex, like the data field: "123", "0x123" or "123h" are all 0x123. NaN when it is not
+ * one or does not fit (11 bits, or 29 with ext).
+ */
 export function parseCanId(s: string, ext: boolean): number {
-  const t = s.trim().toLowerCase()
-  let n = NaN
-  if (/^0x[0-9a-f]{1,8}$/.test(t)) n = parseInt(t.slice(2), 16)
-  else if (/^[0-9a-f]{1,8}h$/.test(t)) n = parseInt(t.slice(0, -1), 16)
-  else if (/^\d{1,9}$/.test(t)) n = Number(t)
+  const t = s.trim().toLowerCase().replace(/^0x/, '').replace(/h$/, '')
+  const n = /^[0-9a-f]{1,8}$/.test(t) ? parseInt(t, 16) : NaN
   return n >= 0 && n <= (ext ? 0x1fffffff : 0x7ff) ? n : NaN
 }
 
@@ -144,7 +144,7 @@ export function CanTab({ call }: { call: BenchCall }) {
 
       <Divider label="Send a frame" labelPosition="left" />
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <TextInput size="xs" w={112} label="ID" aria-label="ID" placeholder="0x123" value={id} onChange={(e) => setId(e.currentTarget.value)} error={idBad ? (ext ? 'up to 0x1fffffff' : 'up to 0x7ff') : undefined} ff="monospace" />
+        <TextInput size="xs" w={112} label="ID (hex)" aria-label="ID (hex)" placeholder="123" value={id} onChange={(e) => setId(e.currentTarget.value)} error={idBad ? (ext ? 'up to 0x1fffffff' : 'up to 0x7ff') : undefined} ff="monospace" />
         <Checkbox size="xs" label="Extended (29-bit)" aria-label="Extended (29-bit)" checked={ext} onChange={(e) => setExt(e.currentTarget.checked)} mb={6} />
         <TextInput
           size="xs"

@@ -236,6 +236,9 @@ describe('SpiTab', () => {
 describe('CanTab', () => {
   it('parses ids and data lengths', () => {
     expect(parseCanId('0x123', false)).toBe(0x123)
+    expect(parseCanId('123', false)).toBe(0x123)
+    expect(parseCanId('7ffh', false)).toBe(0x7ff)
+    expect(parseCanId('12g', false)).toBeNaN()
     expect(parseCanId('0x800', false)).toBeNaN()
     expect(parseCanId('0x18DAF110', true)).toBe(0x18daf110)
     expect(canDataOk(8, false)).toBe(true)
@@ -253,7 +256,7 @@ describe('CanTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open' }))
     expect((await screen.findByTestId('can-session')).textContent).toBe('open: 500 kbit/s, on the bus, terminated')
     expect(seen[0].args).toEqual({ bitrate: 500000, mode: 'normal', term: true })
-    fireEvent.change(screen.getByLabelText('ID'), { target: { value: '0x18daf110' } })
+    fireEvent.change(screen.getByLabelText('ID (hex)'), { target: { value: '0x18daf110' } })
     expect(screen.getByText('up to 0x7ff')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Extended (29-bit)'))
     fireEvent.change(screen.getByLabelText('Data (hex)'), { target: { value: '02 01 0d' } })
