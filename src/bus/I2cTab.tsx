@@ -163,15 +163,16 @@ export function I2cTab({
   return (
     <Stack gap="xs" p="sm">
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <Select size="xs" w={84} label="SDA" data={LA} value={sda} onChange={setSda} placeholder={wiredSda ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
-        <Select size="xs" w={84} label="SCL" data={LA} value={scl} onChange={setScl} placeholder={wiredScl ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
-        <Select size="xs" w={96} label="Speed" data={SPEEDS} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} />
+        <Select size="xs" w={84} label="SDA" aria-label="SDA" data={LA} value={sda} onChange={setSda} placeholder={wiredSda ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={84} label="SCL" aria-label="SCL" data={LA} value={scl} onChange={setScl} placeholder={wiredScl ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={96} label="Speed" aria-label="Speed" data={SPEEDS} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} />
         <Stack gap={2}>
           <Text size="xs" fw={500}>
             Pull-ups
           </Text>
           <SegmentedControl
             size="xs"
+            aria-label="Pull-ups"
             value={pullups}
             onChange={(v) => setPullups(v as 'pod' | 'external')}
             data={[
@@ -219,17 +220,17 @@ export function I2cTab({
 
       <Group gap="xs" wrap="nowrap">
         <Divider label={device ? 'Device' : 'Send'} labelPosition="left" style={{ flex: 1 }} />
-        <Switch size="xs" label="Device mode" checked={device} onChange={(e) => setDevice(e.currentTarget.checked)} />
+        <Switch size="xs" label="Device mode" aria-label="Device mode" checked={device} onChange={(e) => setDevice(e.currentTarget.checked)} />
       </Group>
       {device ? <DeviceRegs bus="i2c" call={call} /> : null}
       {device ? null : (
         <>
           <Group gap="xs" align="flex-end" wrap="wrap">
-            <TextInput size="xs" w={84} label="Address" placeholder="0x48" value={addr} onChange={(e) => setAddr(e.currentTarget.value)} error={addrBad ? '7-bit, e.g. 0x48' : undefined} />
+            <TextInput size="xs" w={84} label="Address" aria-label="Address" placeholder="0x48" value={addr} onChange={(e) => setAddr(e.currentTarget.value)} error={addrBad ? '7-bit, e.g. 0x48' : undefined} />
             <TextInput
               size="xs"
               style={{ flex: 1, minWidth: 160 }}
-              label="Write (hex)"
+              label="Write (hex)" aria-label="Write (hex)"
               placeholder="e.g. 0f, a register"
               value={write}
               onChange={(e) => setWrite(e.currentTarget.value)}
@@ -239,7 +240,7 @@ export function I2cTab({
             <NumberInput
               size="xs"
               w={84}
-              label="Read bytes"
+              label="Read bytes" aria-label="Read bytes"
               value={read}
               onChange={(v) => setRead(typeof v === 'number' ? v : '')}
               min={0}
@@ -249,7 +250,7 @@ export function I2cTab({
             <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || Number.isNaN(a) || writeBad || tooLong || readTooLong}>
               Send
             </Button>
-            {sendCapture ? <Checkbox size="xs" label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={6} /> : null}
+            {sendCapture ? <Checkbox size="xs" label="Capture it" aria-label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={6} /> : null}
             <Button size="xs" variant="light" onClick={() => void scan()} loading={busy === 'scan'} disabled={!!busy}>
               Scan
             </Button>

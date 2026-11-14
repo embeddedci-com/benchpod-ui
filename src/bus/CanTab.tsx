@@ -110,10 +110,10 @@ export function CanTab({ call }: { call: BenchCall }) {
   return (
     <Stack gap="xs" p="sm">
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <Select size="xs" w={112} label="Bit rate" data={BITRATES} value={bitrate} onChange={(v) => v && setBitrate(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
-        <Select size="xs" w={128} label="Data phase" data={DATA_RATES} value={dataRate} onChange={(v) => setDataRate(v ?? '')} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
-        <Select size="xs" w={160} label="Mode" data={MODES} value={mode} onChange={(v) => v && setMode(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
-        <Switch size="xs" label="120 ohm termination" checked={term} onChange={(e) => setTerm(e.currentTarget.checked)} mb={6} />
+        <Select size="xs" w={112} label="Bit rate" aria-label="Bit rate" data={BITRATES} value={bitrate} onChange={(v) => v && setBitrate(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={128} label="Data phase" aria-label="Data phase" data={DATA_RATES} value={dataRate} onChange={(v) => setDataRate(v ?? '')} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={160} label="Mode" aria-label="Mode" data={MODES} value={mode} onChange={(v) => v && setMode(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
+        <Switch size="xs" label="120 ohm termination" aria-label="120 ohm termination" checked={term} onChange={(e) => setTerm(e.currentTarget.checked)} mb={6} />
         <Button size="xs" onClick={() => void open()} loading={busy === 'open'} disabled={!!busy}>
           {isOpen ? 'Open again' : 'Open'}
         </Button>
@@ -144,12 +144,12 @@ export function CanTab({ call }: { call: BenchCall }) {
 
       <Divider label="Send a frame" labelPosition="left" />
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <TextInput size="xs" w={112} label="ID" placeholder="0x123" value={id} onChange={(e) => setId(e.currentTarget.value)} error={idBad ? (ext ? 'up to 0x1fffffff' : 'up to 0x7ff') : undefined} ff="monospace" />
-        <Checkbox size="xs" label="Extended (29-bit)" checked={ext} onChange={(e) => setExt(e.currentTarget.checked)} mb={6} />
+        <TextInput size="xs" w={112} label="ID" aria-label="ID" placeholder="0x123" value={id} onChange={(e) => setId(e.currentTarget.value)} error={idBad ? (ext ? 'up to 0x1fffffff' : 'up to 0x7ff') : undefined} ff="monospace" />
+        <Checkbox size="xs" label="Extended (29-bit)" aria-label="Extended (29-bit)" checked={ext} onChange={(e) => setExt(e.currentTarget.checked)} mb={6} />
         <TextInput
           size="xs"
           style={{ flex: 1, minWidth: 160 }}
-          label="Data (hex)"
+          label="Data (hex)" aria-label="Data (hex)"
           placeholder="e.g. 01 02 03"
           value={data}
           onChange={(e) => setData(e.currentTarget.value)}
@@ -166,7 +166,7 @@ export function CanTab({ call }: { call: BenchCall }) {
         <Button size="xs" variant="light" onClick={() => void run('read', 'can_read', { timeout: 0 })} loading={busy === 'read'} disabled={!!busy}>
           Read
         </Button>
-        <Switch size="xs" label="Keep reading" checked={keep} onChange={(e) => setKeep(e.currentTarget.checked)} />
+        <Switch size="xs" label="Keep reading" aria-label="Keep reading" checked={keep} onChange={(e) => setKeep(e.currentTarget.checked)} />
         <Text size="xs" c="dimmed">
           Frames the pod received go to the log, one row each.
         </Text>

@@ -159,7 +159,7 @@ export function DeviceRegs({
         <Select
           size="xs"
           w={300}
-          label="Definition"
+          label="Definition" aria-label="Definition"
           placeholder={entries === null ? 'loading the library' : entries.length ? 'pick a part' : 'none for this bus'}
           data={(entries ?? []).map((e) => ({ value: e.name, label: e.label || e.name }))}
           value={name}
@@ -167,7 +167,7 @@ export function DeviceRegs({
           clearable
           comboboxProps={{ withinPortal: true }}
         />
-        {def?.i2c ? <Select size="xs" w={84} label="Address" data={addrs} value={addr} onChange={(v) => v && setAddr(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} /> : null}
+        {def?.i2c ? <Select size="xs" w={84} label="Address" aria-label="Address" data={addrs} value={addr} onChange={(v) => v && setAddr(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} /> : null}
         {def ? (
           <Button size="xs" variant="light" onClick={() => void readAll()} loading={busy === 'all'} disabled={!!busy || !def.regs.some((r) => !r.command)}>
             Read all

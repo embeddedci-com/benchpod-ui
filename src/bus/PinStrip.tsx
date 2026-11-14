@@ -219,6 +219,8 @@ export function PinStrip({
               px={4}
               py={2}
               radius="sm"
+              role="group"
+              aria-label={[`LA${la}`, name || 'not wired', p ? ownerShort(p) : 'unknown', dirLabel(p), p ? pullLabel(p) : '', ...warns].filter(Boolean).join(', ')}
               data-testid={`pin-${la}`}
               style={{
                 borderColor: warns.length ? 'var(--mantine-color-orange-6)' : undefined,
@@ -235,6 +237,7 @@ export function PinStrip({
                     multiline
                     w={260}
                     withArrow
+                    events={{ hover: true, focus: true, touch: true }}
                     label={
                       <Stack gap={4}>
                         {warns.map((w) => (
@@ -245,7 +248,7 @@ export function PinStrip({
                       </Stack>
                     }
                   >
-                    <Text c="orange" fw={700} style={{ fontSize: 10, lineHeight: '15px', cursor: 'help' }} aria-label={`LA${la} warning`}>
+                    <Text c="orange" fw={700} style={{ fontSize: 10, lineHeight: '15px', cursor: 'help' }} role="note" tabIndex={0} aria-label={`LA${la} warning: ${warns.join('; ')}`}>
                       check
                     </Text>
                   </Tooltip>
