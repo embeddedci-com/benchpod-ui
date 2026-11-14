@@ -169,6 +169,32 @@ describe('PinStrip', () => {
 })
 
 describe('I2cTab', () => {
+  it('offers to switch the pull-ups on when Open needs them, then opens', async () => {
+    let pulled = false
+    const { call, seen } = fake({
+      la_pins: () => ok({ pins: [{ la: 1, function: 'none', pull_on: false }, { la: 2, function: 'none', pull_on: false }] }),
+      set_pull: () => ((pulled = true), ok({})),
+      i2c_open: (a) => (pulled ? ok({ open: true, sda: a.sda, scl: a.scl, hz: 100000, pullups: 'pod' }) : err('i2c_start: I2C needs pull-ups: switch on LA2 with set_pull(las=[2], enabled=true)')),
+    })
+    wrap(<I2cTab call={call} wiredSda={1} wiredScl={2} />)
+    await waitFor(() => expect(screen.getByTestId('i2c-pull-hint').textContent).toContain('off on LA1 and LA2'))
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch them on and open' }))
+    await waitFor(() => expect(screen.getByTestId('i2c-session').textContent).toContain('open: SDA LA1, SCL LA2'))
+    expect(screen.queryByText(/set_pull\(/)).toBeNull()
+    expect(screen.getByTestId('i2c-pull-hint').textContent).toBe("The pod's pull-ups are on for LA1 and LA2.")
+    expect(seen.find((x) => x.tool === 'set_pull')?.args).toEqual({ las: [1, 2], enabled: true })
+  })
+
+  it('shows a session that was open before it mounted', async () => {
+    const { call } = fake({
+      la_pins: () => ok({ pins: [{ la: 3, function: 'i2cm_sda', pull_on: true }, { la: 4, function: 'i2cm_scl', pull_on: true }] }),
+    })
+    wrap(<I2cTab call={call} wiredSda={1} wiredScl={2} />)
+    await waitFor(() => expect(screen.getByTestId('i2c-session').textContent).toContain('open: SDA LA3, SCL LA4'))
+    expect(screen.getByRole('button', { name: 'Open again' })).toBeTruthy()
+  })
+
   it('opens on the wired pins, sends and shows ACK and the bytes read', async () => {
     const { call, seen } = fake({
       i2c_open: (a) => ok({ open: true, sda: a.sda, scl: a.scl, hz: 400000, pullups: a.pullups }),
@@ -236,6 +262,9 @@ describe('SpiTab', () => {
 describe('CanTab', () => {
   it('parses ids and data lengths', () => {
     expect(parseCanId('0x123', false)).toBe(0x123)
+    expect(parseCanId('123', false)).toBe(0x123)
+    expect(parseCanId('7ffh', false)).toBe(0x7ff)
+    expect(parseCanId('12g', false)).toBeNaN()
     expect(parseCanId('0x800', false)).toBeNaN()
     expect(parseCanId('0x18DAF110', true)).toBe(0x18daf110)
     expect(canDataOk(8, false)).toBe(true)
@@ -253,7 +282,7 @@ describe('CanTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open' }))
     expect((await screen.findByTestId('can-session')).textContent).toBe('open: 500 kbit/s, on the bus, terminated')
     expect(seen[0].args).toEqual({ bitrate: 500000, mode: 'normal', term: true })
-    fireEvent.change(screen.getByLabelText('ID'), { target: { value: '0x18daf110' } })
+    fireEvent.change(screen.getByLabelText('ID (hex)'), { target: { value: '0x18daf110' } })
     expect(screen.getByText('up to 0x7ff')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Extended (29-bit)'))
     fireEvent.change(screen.getByLabelText('Data (hex)'), { target: { value: '02 01 0d' } })
@@ -282,7 +311,7 @@ describe('BusDashboard', () => {
       i2c_transfer: () => err('no I2C session: call i2c_open first'),
     })
     const fetchCapture = (async () => ({ seq: 0 })) as never
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Scan' }))
     await screen.findByTestId('i2c-scan')
     fireEvent.change(screen.getByLabelText('Address'), { target: { value: '0x76' } })
@@ -295,6 +324,22 @@ describe('BusDashboard', () => {
     expect(oldest.textContent).toContain('scan 0x08..0x77')
     expect(oldest.textContent).toContain('0x76')
     expect(oldest.textContent).toContain('I2C')
+  })
+
+  it('keeps the log when it is mounted again (a narrow window, a reload)', async () => {
+    const { call } = fake({
+      wiring: () => ok({ pins: [] }),
+      la_pins: () => ok(pins()),
+      i2c_scan: () => ok({ found: [0x76], found_hex: ['0x76'] }),
+    })
+    const fetchCapture = (async () => ({ seq: 0 })) as never
+    const first = wrap(<BusDashboard logKey="remount" call={call} fetchCapture={fetchCapture} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan' }))
+    await waitFor(() => expect(within(screen.getByTestId('bus-log')).getAllByRole('row')).toHaveLength(2))
+    first.unmount()
+    wrap(<BusDashboard logKey="remount" call={call} fetchCapture={fetchCapture} />)
+    expect(within(await screen.findByTestId('bus-log')).getAllByRole('row')).toHaveLength(2)
+    expect(JSON.parse(sessionStorage.getItem('benchpod-bus-log:remount') ?? '[]')).toHaveLength(1)
   })
 })
 
@@ -319,7 +364,7 @@ describe('send and capture', () => {
       decode_la: () => ok({ protocol: 'i2c', transactions: 1 }),
     })
     const fetchCapture = vi.fn(async (kind: string) => (kind === 'la' ? { seq, sample_rate_hz: 1e6, count: 2112, edges: [] } : { seq: 0 })) as never
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} />)
     fireEvent.change(await screen.findByLabelText('Address'), { target: { value: '0x76' } })
     fireEvent.change(screen.getByLabelText('Write (hex)'), { target: { value: 'd0' } })
     fireEvent.change(screen.getByLabelText('Read bytes'), { target: { value: '1' } })
@@ -352,7 +397,7 @@ describe('send and capture', () => {
     })
     const fetchCapture = vi.fn(async (kind: string) => (kind === 'la' ? { seq: 5, sample_rate_hz: 1e6, count: 2112, edges: [] } : { seq: 0 })) as never
     const onPinsChange = vi.fn()
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} capture="after-send" pins={false} consoleTab={false} onPinsChange={onPinsChange} />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} capture="after-send" pins={false} consoleTab={false} onPinsChange={onPinsChange} />)
     fireEvent.change(await screen.findByLabelText('Address'), { target: { value: '0x76' } })
     expect(screen.queryByTestId('pin-strip')).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Console' })).toBeNull()
@@ -376,7 +421,7 @@ describe('send and capture', () => {
       capture_la: () => ok({ samples: 2048, sample_rate_hz: 1e6, channels: [], send: { bus: 'gpio', error: 'gpio send: LA3 is not a GPIO output' } }),
     })
     const fetchCapture = (async () => ({ seq: 3, sample_rate_hz: 1e6, count: 2048, edges: [] })) as never
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
     fireEvent.click(await screen.findByLabelText('Capture it'))
     fireEvent.click(screen.getByRole('button', { name: 'Write 1' }))
     expect(await screen.findAllByText(/gpio send: LA3 is not a GPIO output/)).toHaveLength(2)
@@ -416,7 +461,7 @@ describe('send again', () => {
         : kind === 'decode'
           ? { seq: 5, protocol: 'i2c', channels: { sda: 1, scl: 2 }, transactions: [t] }
           : { seq: 0 }) as never
-    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={fetchCapture} initialTab="gpio" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Fill the send box with transaction 1' }))
     expect(((await screen.findByLabelText('Write (hex)')) as HTMLInputElement).value).toBe('d0')
     expect((screen.getByLabelText('Address') as HTMLInputElement).value).toBe('0x76')

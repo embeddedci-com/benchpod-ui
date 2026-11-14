@@ -127,7 +127,10 @@ function stepCode(ctx: Ctx, s: SequenceStep, n: number) {
     case 'set_pull': {
       // enable_pullup takes channel numbers: a wiring name becomes its channel when the wiring has it.
       const las = laList(a.las).map((x) => numbered(ctx, x))
-      line(ctx, `bp.${a.enabled ? 'enable' : 'disable'}_pullup(${las.map((x) => (typeof x === 'number' ? String(x) : `bp.wiring.la(${pyStr(String(x))})`)).join(', ')})${laComment(ctx, las)}`)
+      const list = las.map((x) => (typeof x === 'number' ? String(x) : `bp.wiring.la(${pyStr(String(x))})`)).join(', ')
+      line(ctx, `bp.${a.enabled ? 'enable' : 'disable'}_pullup(${list})${laComment(ctx, las)}`)
+      // The pod keeps them on after the test: switch them off at the end, even when an assert fails.
+      if (a.enabled && ctx.stack) line(ctx, `stack.callback(bp.disable_pullup, ${list})  # the pull-ups go off again at the end`)
       return
     }
     case 'i2c_open': {
@@ -371,6 +374,7 @@ export function sequenceToPytest(seq: Pick<BusSequence, 'name' | 'steps'>, opts:
   const date = (opts.date ?? new Date()).toISOString().slice(0, 10)
   const sessions = seq.steps.some((s) =>
     ['i2c_open', 'i2c_transfer', 'i2c_scan', 'can_open', 'can_read', 'uart_open', 'uart_write'].includes(s.tool) ||
+    (s.tool === 'set_pull' && !!s.args?.enabled) ||
     (s.tool === 'capture_la' && (s.args?.send as { bus?: string } | undefined)?.bus === 'i2c'),
   )
   const ctx: Ctx = { out: [], ind: IND + (sessions ? IND : ''), names, imports: new Set(), open: new Set(), stack: sessions }

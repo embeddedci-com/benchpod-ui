@@ -73,6 +73,35 @@ export function I2cTab({
   const [device, setDevice] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | undefined>()
+  /** The pod's pull-ups on SDA and SCL as last seen: null when not known. */
+  const [pullOn, setPullOn] = useState<boolean | null>(null)
+  /** Open was refused for want of pull-ups: offer to switch them on. */
+  const [needPull, setNeedPull] = useState(false)
+
+  // A session opened before this tab mounted (a reload, another tab): the pins say so.
+  useEffect(() => {
+    let live = true
+    void call('la_pins', {}, { poll: true }).then((r) => {
+      const pins = benchData<{ pins: { la: number; function: string; pull_on?: boolean }[] }>(r)?.pins
+      if (!live || !pins) return
+      const at = (f: string) => pins.find((p) => p.function === f || p.function === `i2cm_${f}`)?.la
+      const s = at('sda')
+      const c = at('scl')
+      if (s && c) {
+        setSession((o) => o ?? { open: true, sda: s, scl: c })
+        setSda(String(s))
+        setScl(String(c))
+      }
+      const a = s ?? wiredSda
+      const b = c ?? wiredScl
+      if (a && b) setPullOn(!!pins.find((p) => p.la === a)?.pull_on && !!pins.find((p) => p.la === b)?.pull_on)
+    })
+    return () => {
+      live = false
+    }
+    // once, on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // The wiring arrives after the first render.
   useEffect(() => {
@@ -97,17 +126,49 @@ export function I2cTab({
   const pins = () => ({ ...(sda ? { sda: Number(sda) } : {}), ...(scl ? { scl: Number(scl) } : {}) })
 
   const open = async () => {
-    const s = await run<Session>('open', 'i2c_open', { ...pins(), hz: Number(hz), pullups })
-    if (s) setSession(s)
+    setNeedPull(false)
+    setBusy('open')
+    setError(undefined)
+    try {
+      const r = await call('i2c_open', { ...pins(), hz: Number(hz), pullups })
+      const e = benchError(r)
+      if (e && pullups === 'pod' && /needs pull-ups/i.test(e)) {
+        setPullOn(false)
+        setNeedPull(true)
+        return
+      }
+      if (e) setError(e)
+      const s = benchData<Session>(r)
+      if (s) setSession(s)
+    } finally {
+      setBusy(null)
+      onChange?.()
+    }
   }
   const close = async () => {
     const s = await run<Session>('close', 'i2c_close', {})
     if (s) setSession(s)
   }
-  const pull = async (on: boolean) => {
+  const pull = async (on: boolean): Promise<boolean> => {
     const las = [sda, scl].filter(Boolean).map(Number)
-    await run('pull', 'set_pull', { las, enabled: on })
+    setBusy('pull')
+    setError(undefined)
+    try {
+      const r = await call('set_pull', { las, enabled: on })
+      const e = benchError(r)
+      if (e) setError(e)
+      const ok = !e && !r.declined
+      if (ok) setPullOn(on)
+      return ok
+    } finally {
+      setBusy(null)
+      onChange?.()
+    }
   }
+  const pullAndOpen = async () => {
+    if (await pull(true)) await open()
+  }
+  const pinNames = [sda, scl].filter(Boolean).map((v) => `LA${v}`).join(' and ')
 
   const a = parseI2cAddr(addr)
   const w = parseHexBytes(write)
@@ -190,21 +251,37 @@ export function I2cTab({
       </Group>
       {pullups === 'pod' ? (
         <Group gap="xs">
-          <Text size="xs" c="dimmed">
-            The pod&apos;s pull-ups are on LA1 to LA6 at 3.3 V. Switch them on before you open.
+          <Text size="xs" c="dimmed" data-testid="i2c-pull-hint">
+            {pullOn
+              ? `The pod's pull-ups are on for ${pinNames}.`
+              : `The pod's pull-ups (LA1 to LA6, 3.3 V) are ${pullOn === false ? 'off' : 'needed'}${pinNames ? ` on ${pinNames}` : ''}. Switch them on before you open.`}
           </Text>
-          <Button size="compact-xs" variant="light" onClick={() => void pull(true)} loading={busy === 'pull'} disabled={!!busy || (!sda && !scl)}>
-            Switch on
-          </Button>
-          <Button size="compact-xs" variant="subtle" onClick={() => void pull(false)} disabled={!!busy || (!sda && !scl)}>
-            Off
-          </Button>
+          {pullOn ? null : (
+            <Button size="compact-xs" variant="light" onClick={() => void pull(true)} loading={busy === 'pull'} disabled={!!busy || (!sda && !scl)}>
+              Switch on
+            </Button>
+          )}
+          {pullOn === false ? null : (
+            <Button size="compact-xs" variant="subtle" onClick={() => void pull(false)} disabled={!!busy || (!sda && !scl)}>
+              Off
+            </Button>
+          )}
         </Group>
       ) : (
         <Text size="xs" c="dimmed">
           The board has its own pull-ups on SDA and SCL.
         </Text>
       )}
+      {needPull ? (
+        <Alert color="yellow" variant="light" p="xs" withCloseButton onClose={() => setNeedPull(false)}>
+          <Group gap="xs" justify="space-between">
+            <Text size="xs">I2C needs pull-ups, and the pod&apos;s are off on {pinNames || 'these pins'}.</Text>
+            <Button size="compact-xs" onClick={() => void pullAndOpen()} loading={busy === 'pull' || busy === 'open'} disabled={!!busy}>
+              Switch them on and open
+            </Button>
+          </Group>
+        </Alert>
+      ) : null}
       {session ? (
         <Text size="xs" ff="monospace" c={isOpen ? 'teal' : 'dimmed'} data-testid="i2c-session">
           {isOpen

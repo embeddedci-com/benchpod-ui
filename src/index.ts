@@ -9,7 +9,7 @@ export { AdcEnvelope, isAdcCapture, fmtSi, type AdcCapture } from './results/Adc
 export { LaSummary, isLaCapture, LA_PALETTE, type LaCapture } from './results/LaSummary'
 export { ToolsList, useTools, groupTools, type ToolInfo } from './chat/ToolsList'
 export { BenchPanel, benchOutputs, type PanelTab, type PanelControls, type ConsoleEntry, type CaptureEntry } from './chat/BenchPanel'
-export { useBenchCall, benchData, benchError, type BenchCall, type BenchResult, type BenchCallOptions } from './bench/benchCall'
+export { useBenchCall, benchData, benchError, confirmLines, type BenchCall, type BenchResult, type BenchCallOptions } from './bench/benchCall'
 export { PowerControls, type PowerStatus } from './bench/PowerControls'
 export { ConsoleTerminal, type ConsoleLogEntry } from './bench/ConsoleTerminal'
 export { PodUpdate, newerVersion, type PodUpdater, type PodFirmwareInfo } from './bench/PodUpdate'

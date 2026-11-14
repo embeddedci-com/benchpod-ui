@@ -13,7 +13,7 @@ type Xfer = { addr: number; ack: boolean; rx_hex?: string; nack_at?: number | nu
 type Cell = { hex?: string; error?: string }
 
 /** One SPI transfer on the tab's pins, mode and rate. */
-export type SpiTransfer = (txHex: string) => Promise<{ rx?: string; error?: string }>
+export type SpiTransfer = (txHex: string, opts?: { approved?: boolean }) => Promise<{ rx?: string; error?: string }>
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -77,9 +77,9 @@ export function DeviceRegs({
     }
   }
 
-  const i2c = async (write: string, read: number): Promise<Cell & { ack?: boolean }> => {
+  const i2c = async (write: string, read: number, approved = false): Promise<Cell & { ack?: boolean }> => {
     const a = Number(addr)
-    const r = await call('i2c_transfer', { addr: a, write_hex: write, read })
+    const r = await call('i2c_transfer', { addr: a, write_hex: write, read }, { approved })
     const e = benchError(r)
     if (e) return { error: e }
     if (r.declined) return { error: 'not run' }
@@ -88,20 +88,21 @@ export function DeviceRegs({
     return d.ack ? { hex: d.rx_hex ?? '', ack: true } : { error: nackWhere(d.nack_at, write.length / 2), ack: false }
   }
 
-  const readReg = async (d: DeviceDef, reg: DeviceReg): Promise<Cell> => {
+  /** approved: the user said yes to the whole batch, so this read asks nothing of its own. */
+  const readReg = async (d: DeviceDef, reg: DeviceReg, approved = false): Promise<Cell> => {
     if (d.kind === 'spi') {
       if (!spiTransfer) return { error: 'no SPI' }
-      const o = await spiTransfer(spiReadHex(d, reg))
+      const o = await spiTransfer(spiReadHex(d, reg), { approved })
       return o.error ? { error: o.error } : { hex: spiReadValue(d, o.rx ?? '') }
     }
     if (reg.command) {
       // Write the command alone, give the part its time, then read the answer.
-      const w = await i2c(i2cRegHex(d, reg), 0)
+      const w = await i2c(i2cRegHex(d, reg), 0, approved)
       if (w.error || !reg.size) return w.error ? w : { hex: '' }
       await sleep(Math.ceil(reg.command.busyUs / 1000))
-      return i2c('', reg.size)
+      return i2c('', reg.size, true)
     }
-    return i2c(i2cRegHex(d, reg), reg.size)
+    return i2c(i2cRegHex(d, reg), reg.size, approved)
   }
 
   const read = async (reg: DeviceReg) => {
@@ -119,11 +120,14 @@ export function DeviceRegs({
     if (!def) return
     setBusy('all')
     try {
+      // One yes for the batch: the first read asks (if the host wants a yes), the rest go as approved.
+      let approved = false
       for (const reg of def.regs) {
         if (reg.command) continue
-        const c = await readReg(def, reg)
+        const c = await readReg(def, reg, approved)
         setCells((o) => ({ ...o, [reg.id]: c }))
         if (c.error === 'not run') break
+        approved = true
       }
     } finally {
       setBusy(null)

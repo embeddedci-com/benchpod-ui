@@ -475,7 +475,7 @@ describe('BusDashboard with sequences', () => {
       return ok({})
     }
     const store = memStore()
-    wrap(<BusDashboard call={call} fetchCapture={(async () => ({ seq: 0 })) as never} sequences={store} />)
+    wrap(<BusDashboard logKey={String(Math.random())} call={call} fetchCapture={(async () => ({ seq: 0 })) as never} sequences={store} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Scan' }))
     const box = await screen.findByLabelText('Select scan 0x08..0x77')
     fireEvent.click(box)

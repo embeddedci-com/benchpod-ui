@@ -37,9 +37,9 @@ const ok = (structured: unknown): BenchResult => ({ text: JSON.stringify(structu
 const err = (text: string): BenchResult => ({ text, is_error: true })
 
 function fake(handlers: Record<string, (args: Record<string, unknown>) => BenchResult>) {
-  const seen: { tool: string; args: Record<string, unknown>; poll?: boolean }[] = []
+  const seen: { tool: string; args: Record<string, unknown>; poll?: boolean; approved?: boolean }[] = []
   const call: BenchCall = vi.fn(async (tool, args = {}, opts) => {
-    seen.push({ tool, args, poll: opts?.poll })
+    seen.push({ tool, args, poll: opts?.poll, approved: opts?.approved })
     const h = handlers[tool]
     return h ? h(args) : err(`unknown tool ${tool}`)
   })
@@ -77,6 +77,20 @@ describe('parseDevice', () => {
     expect(spiReadHex(d, who)).toBe('8f00')
     expect(spiReadHex(d, x)).toBe('e80000')
     expect(spiWriteHex(d, ctrl, '57')).toBe('2057')
+  })
+
+  it('names a register by its bare param when it has no name', () => {
+    const d = parseDevice(`format: 1
+kind: i2c
+name: x
+i2c: { address: 0x76 }
+registers:
+  - { at: 0x88, u16le: T1, name: dig_T1 }
+  - { at: 0x8A, s16le: T2 }
+  - { at: 0xD0, u8: 0x60 }
+  - { at: 0xE4, u8: "H4 & 0xFF" }
+`) as DeviceDef
+    expect(d.regs.map((r) => r.name)).toEqual(['dig_T1', 'T2', '0xd0', '0xe4'])
   })
 
   it('says why a definition has no registers', () => {
@@ -132,6 +146,26 @@ describe('device mode', () => {
     fireEvent.click(within(cfg).getByRole('button', { name: 'Write CONFIGURATION' }))
     await waitFor(() => expect(cfg.textContent).toContain('NACK on byte 2'))
     expect(seen.filter((s) => s.tool === 'i2c_transfer')[1].args).toEqual({ addr: 0x48, write_hex: '010220', read: 0 })
+  })
+
+  it('Read all asks once: the reads after the first go as approved', async () => {
+    const { call, seen } = fake({
+      sensor_library: () => ok({ version: '0.1.0', entries: [{ name: 'tmp117', kind: 'i2c', label: 'Precision temperature' }] }),
+      sensor_show: () => ok({ name: 'tmp117', kind: 'i2c', yaml: yaml('tmp117'), params: [] }),
+      i2c_transfer: (a) => ok({ addr: a.addr, ack: true, rx_hex: '0000' }),
+    })
+    wrap(<I2cTab call={call} wiredSda={1} wiredScl={2} />)
+    fireEvent.click(screen.getByLabelText('Device mode'))
+    const def = await screen.findByLabelText('Definition', { selector: 'input' })
+    await waitFor(() => expect((def as HTMLInputElement).placeholder).toBe('pick a part'))
+    fireEvent.click(def)
+    fireEvent.click(await screen.findByRole('option', { name: 'Precision temperature', hidden: true }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Read all' }))
+    await waitFor(() => expect(seen.filter((s) => s.tool === 'i2c_transfer').length).toBeGreaterThan(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Read all' })).not.toHaveProperty('dataset.loading', 'true'))
+    const xfers = seen.filter((s) => s.tool === 'i2c_transfer')
+    expect(xfers[0].approved).toBeFalsy()
+    expect(xfers.slice(1).every((s) => s.approved)).toBe(true)
   })
 
   it('SPI: the definition sets the mode, reads go out with the read bit', async () => {

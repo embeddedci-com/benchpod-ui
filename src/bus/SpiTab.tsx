@@ -129,8 +129,8 @@ export function SpiTab({
   }, [fill])
 
   // Device mode: one plain transfer on this tab's pins, mode and rate (no capture).
-  const deviceTransfer: SpiTransfer = async (txHex) => {
-    const r = await call('spi_transfer', { tx_hex: txHex, ...spiPinArgs(pins), hz: Number(hz), mode: Number(mode) })
+  const deviceTransfer: SpiTransfer = async (txHex, opts) => {
+    const r = await call('spi_transfer', { tx_hex: txHex, ...spiPinArgs(pins), hz: Number(hz), mode: Number(mode) }, { approved: opts?.approved })
     const e = benchError(r)
     if (e) return { error: e }
     if (r.declined) return { error: 'not run' }

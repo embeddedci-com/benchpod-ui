@@ -17,6 +17,14 @@ export type FirmwareStore = {
 type FlashResult = { ok: boolean; returncode: number; target_unreachable: boolean; stalled: boolean; stdout_tail: string; stderr_tail: string }
 type Wiring = { efuse?: number; swd_target?: string; swd_nreset?: boolean; profile?: Record<string, unknown> }
 
+/**
+ * The last flash and boot log, kept while the page lives: a host that unmounts the Flash tab when
+ * another tab opens shows them again on return.
+ */
+const kept: { result: FlashResult | null; ms?: number; boot: string | null } = { result: null, boot: null }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 function fmtSize(n: number): string {
   return n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} kB`
 }
@@ -32,10 +40,14 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
   const [verify, setVerify] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | undefined>()
-  const [result, setResult] = useState<FlashResult | null>(null)
-  const [ms, setMs] = useState<number | undefined>()
+  const [result, setResultState] = useState<FlashResult | null>(kept.result)
+  const [ms, setMsState] = useState<number | undefined>(kept.ms)
   const [showLog, setShowLog] = useState(false)
-  const [boot, setBoot] = useState<string | null>(null)
+  const [boot, setBootState] = useState<string | null>(kept.boot)
+  const [bootNote, setBootNote] = useState<string | null>(null)
+  const setResult = (r: FlashResult | null) => setResultState((kept.result = r))
+  const setMs = (v: number | undefined) => setMsState((kept.ms = v))
+  const setBoot = (v: string | null) => setBootState((kept.boot = v))
 
   const loadFiles = useCallback(async () => {
     try {
@@ -108,9 +120,27 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
     try {
       const r = await call('power_cycle_and_capture', { duration: 4 })
       const e = benchError(r)
+      // The console has the UART open: power-cycle, and the boot log shows in the console.
+      if (e && /in use by uart/i.test(e)) {
+        const efuse = wiring?.efuse === 2 ? 2 : 1
+        const off = await call('power_off', { efuse })
+        if (off.declined) return
+        const offErr = benchError(off)
+        if (offErr) return setError(offErr)
+        await sleep(500)
+        const on = await call('power_on', { efuse }, { approved: true })
+        const onErr = benchError(on)
+        if (onErr) return setError(onErr)
+        setBoot(null)
+        setBootNote('The console has the UART open, so the boot log is in the Console.')
+        return
+      }
       if (e) setError(e)
       const d = benchData<{ text: string }>(r)
-      if (d) setBoot(d.text || '(nothing on the console)')
+      if (d) {
+        setBootNote(null)
+        setBoot(d.text || '(nothing on the console)')
+      }
     } finally {
       setBusy(null)
     }
@@ -221,6 +251,11 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
                   Power-cycle and show the boot log
                 </Button>
               </Group>
+              {bootNote ? (
+                <Text size="xs" c="dimmed" data-testid="boot-note">
+                  {bootNote}
+                </Text>
+              ) : null}
               {boot != null ? <TerminalText text={boot} maxHeight={260} /> : null}
             </>
           ) : null}

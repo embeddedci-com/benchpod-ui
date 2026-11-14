@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { useEffect } from 'react'
-import { benchData, benchError, useBenchCall, type BenchResult } from './benchCall'
+import { benchData, benchError, confirmLines, useBenchCall, type BenchResult } from './benchCall'
 
 beforeAll(() => {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as never
@@ -47,6 +47,69 @@ describe('useBenchCall', () => {
     const r = onResult.mock.calls[0][0] as BenchResult
     expect(r.declined).toBe(true)
     expect(benchError(r)).toBeUndefined()
+  })
+})
+
+describe('confirmLines', () => {
+  it('shows addresses in hex, bytes as hex, and nothing cut short', () => {
+    const long = 'ab'.repeat(80)
+    expect(confirmLines({ addr: 66, write_hex: long, read: 2, data: [1, 255], can_id: 0x123 })).toEqual([
+      ['addr', '0x42 (66)'],
+      ['write_hex', long],
+      ['read', '2'],
+      ['data', '01 FF'],
+      ['can_id', '0x123 (291)'],
+    ])
+  })
+})
+
+describe('approved calls', () => {
+  it('go confirmed at once, with no dialog', async () => {
+    const bodies: { confirmed: boolean }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string))
+      return new Response(JSON.stringify({ text: 'ok' }))
+    }))
+    const onResult = vi.fn()
+    function H() {
+      const { call, dialog } = useBenchCall('/api/tool')
+      useEffect(() => {
+        void call('i2c_transfer', { addr: 0x76, write_hex: 'd0', read: 1 }, { approved: true }).then(onResult)
+      }, [call])
+      return <MantineProvider>{dialog}</MantineProvider>
+    }
+    render(<H />)
+    await waitFor(() => expect(onResult).toHaveBeenCalled())
+    expect(bodies.map((b) => b.confirmed)).toEqual([true])
+    expect(screen.queryByText('Run it')).toBeNull()
+  })
+})
+
+describe('FlashControls', () => {
+  const store = { upload: vi.fn(), recent: async () => [{ name: 'app.elf', path: '/f/app.elf', size: 2048, modified: '' }] }
+  const flashOk = { ok: true, returncode: 0, target_unreachable: false, stalled: false, stdout_tail: '', stderr_tail: '' }
+
+  it('keeps the result across a remount, and with the console open power-cycles for the console', async () => {
+    const { FlashControls } = await import('./FlashControls')
+    const seen: { tool: string; args: Record<string, unknown>; approved?: boolean }[] = []
+    const call = vi.fn(async (tool: string, args: Record<string, unknown> = {}, opts?: { approved?: boolean }): Promise<BenchResult> => {
+      seen.push({ tool, args, approved: opts?.approved })
+      if (tool === 'wiring') return { text: '', structured: { efuse: 1, swd_target: 'target/stm32f4x.cfg' } }
+      if (tool === 'flash') return { text: '', structured: flashOk, ms: 3600 }
+      if (tool === 'power_cycle_and_capture') return { text: 'PinConflictError: uart_proxy_start: pin conflict: LA3 is in use by uart_rx', is_error: true }
+      return { text: '', structured: {} }
+    })
+    const first = render(<MantineProvider><FlashControls call={call} firmware={store} /></MantineProvider>)
+    const btn = await screen.findByRole('button', { name: 'Flash' })
+    await waitFor(() => expect((btn as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(btn)
+    await screen.findByText('flashed')
+    first.unmount()
+    render(<MantineProvider><FlashControls call={call} firmware={store} /></MantineProvider>)
+    expect(await screen.findByText('flashed')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Power-cycle and show the boot log' }))
+    expect((await screen.findByTestId('boot-note')).textContent).toContain('boot log is in the Console')
+    expect(seen.filter((x) => x.tool.startsWith('power_o')).map((x) => [x.tool, x.approved ?? false])).toEqual([['power_off', false], ['power_on', true]])
   })
 })
 

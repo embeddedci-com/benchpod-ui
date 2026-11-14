@@ -17,6 +17,7 @@ def test_all_the_buses(benchpod):
     bp = benchpod
     with ExitStack() as stack:  # closes the sessions opened below, even when an assert fails
         bp.enable_pullup(1, 2)  # LA1 i2c_sda, LA2 i2c_scl
+        stack.callback(bp.disable_pullup, 1, 2)  # the pull-ups go off again at the end
         i2c = stack.enter_context(bp.open_i2c(hz=400_000, pullups="pod"))
         assert i2c.scan(0x08, 0x77) == [0x76]
         assert i2c.read_reg(0x76, 0xd0, 1) == bytes.fromhex("58")

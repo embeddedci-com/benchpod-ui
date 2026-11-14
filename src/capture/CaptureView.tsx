@@ -81,6 +81,12 @@ const ADC_SOURCES = [
   { value: 'ext', label: 'SMA input' },
   { value: 'current_in', label: '4-20 mA input' },
 ]
+const PRE_OPTIONS = [
+  { value: '0', label: 'nothing' },
+  { value: '0.1', label: '10 %' },
+  { value: '0.25', label: '25 %' },
+  { value: '0.5', label: '50 %' },
+]
 const EDGES = [
   { value: 'rising', label: 'rising' },
   { value: 'falling', label: 'falling' },
@@ -134,6 +140,8 @@ export function CaptureView({
   const [source, setSource] = useState('ext')
   const [trigger, setTrigger] = useState<string | null>(null)
   const [edge, setEdge] = useState('rising')
+  /** Logic captures: the share of the samples kept from before the trigger. */
+  const [pre, setPre] = useState('0.1')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [la, setLa] = useState<LaCaptureData | null>(null)
@@ -204,8 +212,10 @@ export function CaptureView({
       const laN = Math.max(16, Math.min(MAX_SAMPLES, Math.round(dur * Number(laRate))))
       const adcN = Math.max(16, Math.min(MAX_SAMPLES, Math.round(dur * Number(adcRate))))
       const trig: Record<string, unknown> = trigger ? { trigger_la: Number(trigger), trigger_edge: edge } : {}
+      // What led up to the trigger (a UART byte's start bit, say) stays in the capture.
+      const preN = trigger ? Math.round(laN * Number(pre)) : 0
       let r
-      if (mode === 'la') r = await call('capture_la', { samples: laN, sample_rate_hz: Number(laRate), ...trig })
+      if (mode === 'la') r = await call('capture_la', { samples: laN, sample_rate_hz: Number(laRate), ...trig, ...(preN ? { trigger_pre_samples: preN } : {}) })
       else if (mode === 'adc') r = await call('capture_adc', { samples: adcN, sample_rate_hz: Number(adcRate), source, ...trig })
       else
         r = await call('capture_correlated', {
@@ -279,6 +289,7 @@ export function CaptureView({
         {mode !== 'la' ? <Select size="xs" w={104} label="Analog rate" data={ADC_RATES} value={adcRate} onChange={(v) => v && setAdcRate(v)} allowDeselect={false} /> : null}
         <Select size="xs" w={92} label="Trigger" placeholder="none" data={CH_OPTIONS} value={trigger} onChange={setTrigger} clearable />
         {trigger ? <Select size="xs" w={88} label="on" data={EDGES} value={edge} onChange={(v) => v && setEdge(v)} allowDeselect={false} /> : null}
+        {trigger && mode === 'la' ? <Select size="xs" w={96} label="Before it" aria-label="Before the trigger" data={PRE_OPTIONS} value={pre} onChange={(v) => v && setPre(v)} allowDeselect={false} /> : null}
         <Button size="xs" onClick={() => void capture()} loading={busy}>
           Capture
         </Button>

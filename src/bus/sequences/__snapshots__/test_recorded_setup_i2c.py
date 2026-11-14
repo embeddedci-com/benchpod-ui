@@ -15,6 +15,7 @@ def test_recorded_setup_i2c(benchpod):
     with ExitStack() as stack:  # closes the sessions opened below, even when an assert fails
         # Setup: the bus as it was when the sequence was recorded (opened before its first step).
         bp.enable_pullup(2, 1)  # LA2 i2c_sda, LA1 i2c_scl
+        stack.callback(bp.disable_pullup, 2, 1)  # the pull-ups go off again at the end
         i2c = stack.enter_context(bp.open_i2c(sda=2, scl=1, hz=100_000, pullups="pod"))  # LA2 i2c_sda, LA1 i2c_scl
         # The recorded steps.
         i2c.write_reg(0x42, 0x10, bytes.fromhex("c3 3c"))
