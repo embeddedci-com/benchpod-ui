@@ -18,8 +18,12 @@ const OUTCOME: Record<StepOutcome['status'], { label: string; color: string }> =
   skipped: { label: 'skipped', color: 'gray' },
 }
 
-/** One line per step for the lists: the tool and its main arguments. */
+/** One line per step for the lists: the tool and its main arguments; "setup:" for a version 2 setup step. */
 export function stepLabel(s: SequenceStep): string {
+  return s.setup ? `setup: ${callLabel(s)}` : callLabel(s)
+}
+
+function callLabel(s: SequenceStep): string {
   const a = s.args ?? {}
   const hex = (v: unknown) => String(v ?? '').replace(/\s+/g, '').match(/../g)?.join(' ') ?? ''
   const addr = (v: unknown) => `0x${Number(v).toString(16).padStart(2, '0')}`
@@ -28,8 +32,11 @@ export function stepLabel(s: SequenceStep): string {
       return `I2C ${addr(a.addr)}${a.write_hex ? ` W ${hex(a.write_hex)}` : ''}${Number(a.read) ? ` R ${a.read}` : ''}`
     case 'i2c_scan':
       return 'I2C scan'
-    case 'i2c_open':
-      return `I2C open${a.hz ? ` ${Number(a.hz) / 1000} kHz` : ''}`
+    case 'i2c_open': {
+      const pin = (v: unknown) => (typeof v === 'number' ? `LA${v}` : String(v))
+      const pins = a.sda !== undefined && a.scl !== undefined ? ` SDA ${pin(a.sda)} SCL ${pin(a.scl)}` : ''
+      return `I2C open${pins}${a.hz ? ` ${Number(a.hz) / 1000} kHz` : ''}${a.pullups ? `, ${a.pullups} pull-ups` : ''}`
+    }
     case 'i2c_close':
       return 'I2C close'
     case 'set_pull':
@@ -55,6 +62,12 @@ export function stepLabel(s: SequenceStep): string {
       return short ? `${s.tool} ${short}` : s.tool
     }
   }
+}
+
+/** "2 steps", or "2 steps + setup" when the sequence starts with setup steps. */
+export function stepCount(steps: SequenceStep[]): string {
+  const n = steps.filter((s) => !s.setup).length
+  return `${n} ${n === 1 ? 'step' : 'steps'}${steps.some((s) => s.setup) ? ' + setup' : ''}`
 }
 
 function download(name: string, text: string) {
@@ -139,7 +152,7 @@ export function SequencesPanel({ store, call, selected, onClearSelection, names 
     setRunning((r) => (r && r.id === seq.id ? { ...r, outcomes, done: true } : r))
   }
 
-  const n = selected.length
+  const n = selected.filter((s) => !s.setup).length
   return (
     <Stack gap={6} data-testid="bus-sequences">
       <Group justify="space-between" gap="xs">
@@ -187,7 +200,7 @@ export function SequencesPanel({ store, call, selected, onClearSelection, names 
                       {seq.name}
                     </Text>
                     <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                      {seq.steps.length} {seq.steps.length === 1 ? 'step' : 'steps'}
+                      {stepCount(seq.steps)}
                     </Text>
                     {seq.shared && mine ? (
                       <Badge size="xs" variant="light">

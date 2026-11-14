@@ -81,6 +81,13 @@ function laList(v: unknown): unknown[] {
   return Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]
 }
 
+/** A wiring name as its channel number when the wiring names it, else as it is. */
+function numbered(ctx: Ctx, v: unknown): unknown {
+  if (typeof v !== 'string') return v
+  const i = ctx.names.findIndex((n) => n && n.toLowerCase() === v.trim().toLowerCase())
+  return i >= 0 ? i + 1 : v
+}
+
 /** "  # LA3 READY" for channel numbers the wiring names. */
 function laComment(ctx: Ctx, las: unknown[]): string {
   const named = las.filter((x): x is number => typeof x === 'number' && !!ctx.names[x - 1]).map((x) => `LA${x} ${ctx.names[x - 1]}`)
@@ -118,18 +125,20 @@ function stepCode(ctx: Ctx, s: SequenceStep, n: number) {
   const e = s.expect
   switch (s.tool) {
     case 'set_pull': {
-      const las = laList(a.las)
-      line(ctx, `bp.${a.enabled ? 'enable' : 'disable'}_pullup(${las.map(pyLa).join(', ')})${laComment(ctx, las)}`)
+      // enable_pullup takes channel numbers: a wiring name becomes its channel when the wiring has it.
+      const las = laList(a.las).map((x) => numbered(ctx, x))
+      line(ctx, `bp.${a.enabled ? 'enable' : 'disable'}_pullup(${las.map((x) => (typeof x === 'number' ? String(x) : `bp.wiring.la(${pyStr(String(x))})`)).join(', ')})${laComment(ctx, las)}`)
       return
     }
     case 'i2c_open': {
-      const pins = has(a, 'sda') || has(a, 'scl') ? [has(a, 'sda') ? pyLa(a.sda) : 'None', has(a, 'scl') ? pyLa(a.scl) : 'None'] : []
       const opts = kw([
+        ['sda', has(a, 'sda') ? pyLa(a.sda) : undefined],
+        ['scl', has(a, 'scl') ? pyLa(a.scl) : undefined],
         ['hz', has(a, 'hz') ? pyInt(Number(a.hz)) : undefined],
-        ['pullups', has(a, 'pullups') && a.pullups !== 'pod' ? pyStr(String(a.pullups)) : undefined],
+        ['pullups', has(a, 'pullups') ? pyStr(String(a.pullups)) : undefined],
       ])
       if (ctx.open.has('i2c')) line(ctx, 'i2c.close()')
-      line(ctx, `i2c = stack.enter_context(bp.open_i2c(${args(...pins, opts)}))${laComment(ctx, [a.sda, a.scl])}`)
+      line(ctx, `i2c = stack.enter_context(bp.open_i2c(${opts}))${laComment(ctx, [a.sda, a.scl])}`)
       ctx.open.add('i2c')
       return
     }
@@ -365,7 +374,13 @@ export function sequenceToPytest(seq: Pick<BusSequence, 'name' | 'steps'>, opts:
     (s.tool === 'capture_la' && (s.args?.send as { bus?: string } | undefined)?.bus === 'i2c'),
   )
   const ctx: Ctx = { out: [], ind: IND + (sessions ? IND : ''), names, imports: new Set(), open: new Set(), stack: sessions }
-  seq.steps.forEach((s, i) => stepCode(ctx, s, i + 1))
+  // Version 2: the setup steps first, under a comment, then the recorded steps.
+  const setup = seq.steps.some((s) => s.setup)
+  seq.steps.forEach((s, i) => {
+    if (setup && i === 0) line(ctx, '# Setup: the bus as it was when the sequence was recorded (opened before its first step).')
+    if (setup && !s.setup && seq.steps[i - 1]?.setup) line(ctx, '# The recorded steps.')
+    stepCode(ctx, s, i + 1)
+  })
   if (!ctx.out.length) ctx.out.push(ctx.ind + 'pass  # the sequence has no steps')
 
   const sdk = ['Trigger', 'SpiSend', 'GpioSend'].filter((x) => ctx.imports.has(x))
