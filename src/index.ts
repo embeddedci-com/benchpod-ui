@@ -37,7 +37,7 @@ export {
 } from './capture/DecodeTables'
 export { CaptureView, type FetchCapture, type LaCaptureData, type AdcCaptureData, type DecodeData } from './capture/CaptureView'
 export { BusDashboard } from './bus/BusDashboard'
-export { PinStrip, pinWarnings, pinWarningLines, dirLabel, pullLabel, warnBits, ownerLabel, WARN_PULL_UNDER_PUSH_PULL, WARN_UNPOWERED_DUT, type LaPin, type LaPins } from './bus/PinStrip'
+export { PinStrip, useLaPins, pinWarningCount, type LaPinsState, pinWarnings, pinWarningLines, dirLabel, pullLabel, warnBits, ownerLabel, WARN_PULL_UNDER_PUSH_PULL, WARN_UNPOWERED_DUT, type LaPin, type LaPins } from './bus/PinStrip'
 export { I2cTab, parseI2cAddr, parseHexBytes } from './bus/I2cTab'
 export { GpioTab } from './bus/GpioTab'
 export { SpiTab, spiPinArgs } from './bus/SpiTab'

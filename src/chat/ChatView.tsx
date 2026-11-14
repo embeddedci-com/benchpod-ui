@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ActionIcon, Alert, Anchor, Badge, Box, Button, CloseButton, Drawer, FileButton, Group, Loader, Modal, ScrollArea, Stack, Text, Textarea, Tooltip, UnstyledButton } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { Markdown } from './Markdown'
@@ -157,7 +158,15 @@ export type ChatViewProps = {
   attaching?: boolean
   /** The panel's tab before there is any output (default: the console). The panel starts open on a wide screen. */
   panelInitialTab?: string
+  /** The host's own pane: the console, the captures and the power readings are drawn into these
+   * elements (each section alone), and ChatView shows no panel or panel button of its own. */
+  panelSlots?: Partial<Record<PanelKind, HTMLElement | null>>
+  /** With panelSlots: a new capture or power reading, or a click on a summary line, asks the host to
+   * show that section. */
+  onPanelShow?: (kind: PanelKind) => void
 }
+
+type PanelKind = 'console' | 'captures' | 'power'
 
 /** A small line icon (24x24 path), in the current text color. */
 function Icon({ d }: { d: string }) {
@@ -179,6 +188,9 @@ export function ChatView(p: ChatViewProps) {
   const [draft, setDraft] = useState('')
   const [toolsOpen, setToolsOpen] = useState(false)
   const panelOn = p.panel !== false
+  const hosted = !!p.panelSlots
+  const show = useRef(p.onPanelShow)
+  show.current = p.onPanelShow
   // Read synchronously: a phone must never see the panel open itself on the first render.
   const wide = useMediaQuery('(min-width: 48em)', false, { getInitialValueInEffect: false })
   // A narrow window on a computer still gets the cursor; a touch screen would pop up its keyboard.
@@ -205,11 +217,14 @@ export function ChatView(p: ChatViewProps) {
     if (k > seen.current.captures) {
       setPanelTab('captures')
       setSelected(outputs.captures[k - 1].id)
+      show.current?.('captures')
     } else if (w > seen.current.power) {
       setPanelTab('power')
       setSelected(outputs.power[w - 1].id)
+      show.current?.('power')
     } else if (c > seen.current.console && seen.current.console === 0 && seen.current.captures === 0) {
       setPanelTab('console')
+      show.current?.('console')
     }
     seen.current = { console: c, captures: k, power: w }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -218,6 +233,7 @@ export function ChatView(p: ChatViewProps) {
     setPanelTab(kind)
     if (kind !== 'console') setSelected(id)
     setPanelOpen(true)
+    show.current?.(kind)
   }
   const inPanel = (id: string): { kind: 'console' | 'captures' | 'power'; summary: string } | undefined => {
     if (!panelOn) return undefined
@@ -443,7 +459,7 @@ export function ChatView(p: ChatViewProps) {
                   </ActionIcon>
                 </Tooltip>
               ) : null}
-              {panelOn ? (
+              {panelOn && !hosted ? (
                 <Tooltip label={panelOpen ? 'Hide the console and captures' : 'Show the console and captures'}>
                   <ActionIcon variant={panelOpen ? 'light' : 'subtle'} size="sm" onClick={() => setPanelOpen(!panelOpen)} aria-label="Bench panel">
                     <Icon d="M4 4h16v16H4zM14 4v16" />
@@ -466,12 +482,24 @@ export function ChatView(p: ChatViewProps) {
         {p.tools ? <ToolsList tools={p.tools} referenceHref={p.toolsReferenceHref} /> : null}
       </Modal>
     </Stack>
-      {panelOn && panelOpen && wide ? (
+      {panelOn && hosted
+        ? (['console', 'captures', 'power'] as const).map((kind) => {
+            const slot = p.panelSlots?.[kind]
+            return slot
+              ? createPortal(
+                  <BenchPanel outputs={outputs} tab={kind} onTab={setPanelTab} selected={selected} onSelect={setSelected} controls={p.panelControls} only={kind} />,
+                  slot,
+                  kind,
+                )
+              : null
+          })
+        : null}
+      {panelOn && !hosted && panelOpen && wide ? (
         <Box style={{ width: '44%', minWidth: 340, maxWidth: 720, flex: 'none', borderLeft: '1px solid var(--mantine-color-default-border)', minHeight: 0 }}>
           {panel}
         </Box>
       ) : null}
-      {panelOn && !wide ? (
+      {panelOn && !hosted && !wide ? (
         <Drawer
           opened={panelOpen}
           onClose={() => setPanelOpen(false)}

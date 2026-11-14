@@ -116,23 +116,14 @@ export function pinColumns(width: number): number {
   return width >= 7 * CELL_MIN ? 7 : 4
 }
 
-export function PinStrip({ call, names, refreshKey, title = 'Pins' }: { call: BenchCall; names?: string[]; refreshKey?: unknown; title?: string }) {
+/** The pins from the la_pins tool, read on mount and whenever refreshKey changes; `load` reads again.
+ * A null call reads nothing (the host passes the data instead). */
+export function useLaPins(call: BenchCall | null, refreshKey?: unknown): LaPinsState {
   const [pins, setPins] = useState<LaPins | null>(null)
   const [error, setError] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
-  const [width, setWidth] = useState(0)
-  const boxRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const el = boxRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    setWidth(el.getBoundingClientRect().width)
-    const ro = new ResizeObserver((e) => setWidth(e[0].contentRect.width))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
   const load = useCallback(async () => {
+    if (!call) return
     setBusy(true)
     try {
       const r = await call('la_pins', {}, { poll: true })
@@ -146,6 +137,43 @@ export function PinStrip({ call, names, refreshKey, title = 'Pins' }: { call: Be
   useEffect(() => {
     void load()
   }, [load, refreshKey])
+  return { pins, error, busy, load }
+}
+
+export type LaPinsState = { pins: LaPins | null; error?: string; busy: boolean; load: () => Promise<void> }
+
+/** How many warnings the pins have (for a "2 pin warnings" link elsewhere). */
+export function pinWarningCount(pins: LaPins | null): number {
+  return (pins?.pins ?? []).reduce((n, p) => n + pinWarningLines(p).length, 0)
+}
+
+export function PinStrip({
+  call,
+  names,
+  refreshKey,
+  title = 'Pins',
+  data,
+}: {
+  call: BenchCall
+  names?: string[]
+  refreshKey?: unknown
+  title?: string
+  /** The host's pins (useLaPins), shared with other views; without it the strip reads them itself. */
+  data?: LaPinsState
+}) {
+  const own = useLaPins(data ? null : call, refreshKey)
+  const { pins, error, busy, load } = data ?? own
+  const [width, setWidth] = useState(0)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    setWidth(el.getBoundingClientRect().width)
+    const ro = new ResizeObserver((e) => setWidth(e[0].contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   const levels = new Map((pins?.levels ?? []).map((l) => [l.la, l.level]))
   const byLa = new Map((pins?.pins ?? []).map((p) => [p.la, p]))

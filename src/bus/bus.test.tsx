@@ -9,7 +9,7 @@ import { SpiTab } from './SpiTab'
 import { CanTab, canDataOk, parseCanId } from './CanTab'
 import { captureArgs } from './sendCapture'
 import { i2cSendAgain, spiBursts } from './sendAgain'
-import { PinStrip, pinColumns, dirLabel, ownerLabel, pinWarningLines, pinWarnings, pullLabel, warnBits, type LaPin } from './PinStrip'
+import { PinStrip, pinColumns, pinWarningCount, dirLabel, ownerLabel, pinWarningLines, pinWarnings, pullLabel, warnBits, type LaPin } from './PinStrip'
 import { logRow, logRows, loggedCall, nackWhere, type BusLogRow } from './busLog'
 
 beforeAll(() => {
@@ -146,6 +146,16 @@ describe('PinStrip', () => {
     expect(within(screen.getByTestId('pin-1')).getByText('pull-up on')).toBeTruthy()
     expect(within(screen.getByTestId('pin-4')).getByText('not wired')).toBeTruthy()
     expect(within(screen.getByTestId('pin-4')).getByText('not set')).toBeTruthy()
+  })
+
+  it('counts warnings, and draws data the host passes without reading the pod', () => {
+    const data = { pins: pins({ 3: { function: 'gpio', warn: 3 }, 6: { function: 'gpio', pull: 'up', pull_on: true, warn: 1 } }), busy: false, load: async () => {} }
+    expect(pinWarningCount(data.pins)).toBe(3)
+    expect(pinWarningCount(null)).toBe(0)
+    const { call, seen } = fake({})
+    wrap(<PinStrip call={call} data={data} />)
+    expect(screen.getByTestId('pin-warnings').textContent).toContain('LA6: a pull-up is on')
+    expect(seen).toHaveLength(0)
   })
 
   it('shows the pod error when la_pins fails', async () => {
