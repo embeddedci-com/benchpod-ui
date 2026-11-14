@@ -152,6 +152,7 @@ export function BenchPanel({
   onSelect,
   extraTabs = [],
   controls = {},
+  only,
 }: {
   outputs: BenchOutputs
   tab: string
@@ -160,30 +161,21 @@ export function BenchPanel({
   onSelect: (id: string) => void
   extraTabs?: PanelTab[]
   controls?: PanelControls
+  /** One section alone, without the tab row: a host that puts the console, the captures and the
+   * power readings in its own pane. */
+  only?: 'console' | 'captures' | 'power'
 }) {
   const consoleEnd = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (tab === 'console') consoleEnd.current?.scrollIntoView({ block: 'end' })
-  }, [tab, outputs.console.length])
+    if ((only ?? tab) === 'console') consoleEnd.current?.scrollIntoView({ block: 'end' })
+  }, [tab, only, outputs.console.length])
   const caps = [...outputs.captures].reverse()
   const current = caps.find((c) => c.id === selected) ?? caps[0]
   const pows = [...outputs.power].reverse()
   const pow = pows.find((c) => c.id === selected) ?? pows[0]
 
-  return (
-    <Tabs value={tab} onChange={(v) => v && onTab(v)} keepMounted={false} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <Tabs.List px="xs">
-        <Tabs.Tab value="console">Console{outputs.console.length ? ` (${outputs.console.length})` : ''}</Tabs.Tab>
-        <Tabs.Tab value="captures">Captures{outputs.captures.length ? ` (${outputs.captures.length})` : ''}</Tabs.Tab>
-        <Tabs.Tab value="power">Power{outputs.power.length ? ` (${outputs.power.length})` : ''}</Tabs.Tab>
-        {extraTabs.map((t) => (
-          <Tabs.Tab key={t.value} value={t.value}>
-            {t.label}
-          </Tabs.Tab>
-        ))}
-      </Tabs.List>
-      <Box style={{ flex: 1, minHeight: 0 }}>
-        <Tabs.Panel value="console" h="100%">
+  const consoleSection = (
+    <>
           {controls.console ? controls.console : (
           <ScrollArea h="100%">
             <Box p="sm">
@@ -201,8 +193,9 @@ export function BenchPanel({
             </Box>
           </ScrollArea>
           )}
-        </Tabs.Panel>
-        <Tabs.Panel value="captures" h="100%">
+    </>
+  )
+  const capturesSection = (
           <ScrollArea h="100%">
             {controls.captures}
             <Stack p="sm" gap="sm">
@@ -243,8 +236,8 @@ export function BenchPanel({
               )}
             </Stack>
           </ScrollArea>
-        </Tabs.Panel>
-        <Tabs.Panel value="power" h="100%">
+  )
+  const powerSection = (
           <ScrollArea h="100%">
             {controls.power}
             <Stack p="sm" gap="sm">
@@ -291,6 +284,35 @@ export function BenchPanel({
               )}
             </Stack>
           </ScrollArea>
+  )
+  if (only)
+    return (
+      <Box h="100%" style={{ minHeight: 0 }}>
+        {only === 'console' ? consoleSection : only === 'captures' ? capturesSection : powerSection}
+      </Box>
+    )
+
+  return (
+    <Tabs value={tab} onChange={(v) => v && onTab(v)} keepMounted={false} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Tabs.List px="xs">
+        <Tabs.Tab value="console">Console{outputs.console.length ? ` (${outputs.console.length})` : ''}</Tabs.Tab>
+        <Tabs.Tab value="captures">Captures{outputs.captures.length ? ` (${outputs.captures.length})` : ''}</Tabs.Tab>
+        <Tabs.Tab value="power">Power{outputs.power.length ? ` (${outputs.power.length})` : ''}</Tabs.Tab>
+        {extraTabs.map((t) => (
+          <Tabs.Tab key={t.value} value={t.value}>
+            {t.label}
+          </Tabs.Tab>
+        ))}
+      </Tabs.List>
+      <Box style={{ flex: 1, minHeight: 0 }}>
+        <Tabs.Panel value="console" h="100%">
+          {consoleSection}
+        </Tabs.Panel>
+        <Tabs.Panel value="captures" h="100%">
+          {capturesSection}
+        </Tabs.Panel>
+        <Tabs.Panel value="power" h="100%">
+          {powerSection}
         </Tabs.Panel>
         {extraTabs.map((t) => (
           <Tabs.Panel key={t.value} value={t.value} h="100%">

@@ -9,7 +9,7 @@ import { SpiTab } from './SpiTab'
 import { CanTab, canDataOk, parseCanId } from './CanTab'
 import { captureArgs } from './sendCapture'
 import { i2cSendAgain, spiBursts } from './sendAgain'
-import { PinStrip, ownerLabel, pinWarnings, warnBits, type LaPin } from './PinStrip'
+import { PinStrip, pinColumns, pinWarningCount, dirLabel, ownerLabel, pinWarningLines, pinWarnings, pullLabel, warnBits, type LaPin } from './PinStrip'
 import { logRow, logRows, loggedCall, nackWhere, type BusLogRow } from './busLog'
 
 beforeAll(() => {
@@ -102,8 +102,28 @@ describe('PinStrip', () => {
       warnBits({ la: 2, function: 'gpio', warnings: ['LA2: target power is off while the pin is driven high or pulled up (this powers ...)'] }),
     ).toBe(2)
     expect(pinWarnings({ la: 1, function: 'gpio', warn: 1 })[0]).toMatch(/wastes current/)
+    expect(pinWarningLines({ la: 6, function: 'gpio', pull: 'up', warn: 1 })).toEqual(['LA6: a pull-up is on under a pin the pod drives; switch the pull-up off or use open drain'])
+    expect(pinWarningLines({ la: 6, function: 'gpio', warn: 2 })[0]).toMatch(/^LA6: high or pulled up while the board is off/)
     expect(ownerLabel({ la: 1, function: 'i2cm_sda' })).toBe('I2C SDA')
     expect(ownerLabel({ la: 1, function: 'gpio', gpio: 'open_drain' })).toBe('gpio od')
+  })
+
+  it('fits 14, 7 or 4 pins in a row', () => {
+    expect(pinColumns(0)).toBe(14)
+    expect(pinColumns(1100)).toBe(14)
+    expect(pinColumns(900)).toBe(7)
+    expect(pinColumns(380)).toBe(4)
+  })
+
+  it('says direction and pull in words', () => {
+    expect(dirLabel({ la: 1, function: 'none', dir: 'dut_input' })).toBe('board in')
+    expect(dirLabel({ la: 1, function: 'none', dir: 'dut_output' })).toBe('board out')
+    expect(dirLabel({ la: 1, function: 'none', dir: 'bidir' })).toBe('both')
+    expect(dirLabel({ la: 1, function: 'none', dir: 'unknown' })).toBe('not set')
+    expect(dirLabel({ la: 1, function: 'none' })).toBe('not set')
+    expect(pullLabel({ la: 1, function: 'none', pull: 'up', pull_on: true })).toBe('pull-up on')
+    expect(pullLabel({ la: 7, function: 'none', pull: 'down', pull_on: false })).toBe('pull-down off')
+    expect(pullLabel({ la: 9, function: 'none', pull: null })).toBe('no pull')
   })
 
   it('draws 14 pins with names, owners and a warning with a plain explanation', async () => {
@@ -112,14 +132,30 @@ describe('PinStrip', () => {
     })
     const names = ['i2c_sda', 'i2c_scl', 'READY']
     wrap(<PinStrip call={call} names={names} />)
-    await screen.findByTitle('Owner: I2C SDA')
+    await screen.findByTitle('Used by: I2C SDA')
     for (let la = 1; la <= 14; la++) expect(screen.getByTestId(`pin-${la}`)).toBeTruthy()
     expect(within(screen.getByTestId('pin-3')).getByText('READY')).toBeTruthy()
     expect(within(screen.getByTestId('pin-3')).getByText('gpio')).toBeTruthy()
     const icon = screen.getByLabelText('LA3 warning')
     fireEvent.mouseEnter(icon)
-    expect(await screen.findByText(/A pull resistor is on under a push-pull output/)).toBeTruthy()
+    expect(await screen.findByText(/A pull resistor is on under a pin the pod drives/)).toBeTruthy()
     expect(screen.queryByLabelText('LA1 warning')).toBeNull()
+    // The warning is also text under the strip, not only a hover.
+    expect(screen.getByTestId('pin-warnings').textContent).toContain('LA3: a pull-up is on under a pin the pod drives')
+    expect(within(screen.getByTestId('pin-1')).getByText('both')).toBeTruthy()
+    expect(within(screen.getByTestId('pin-1')).getByText('pull-up on')).toBeTruthy()
+    expect(within(screen.getByTestId('pin-4')).getByText('not wired')).toBeTruthy()
+    expect(within(screen.getByTestId('pin-4')).getByText('not set')).toBeTruthy()
+  })
+
+  it('counts warnings, and draws data the host passes without reading the pod', () => {
+    const data = { pins: pins({ 3: { function: 'gpio', warn: 3 }, 6: { function: 'gpio', pull: 'up', pull_on: true, warn: 1 } }), busy: false, load: async () => {} }
+    expect(pinWarningCount(data.pins)).toBe(3)
+    expect(pinWarningCount(null)).toBe(0)
+    const { call, seen } = fake({})
+    wrap(<PinStrip call={call} data={data} />)
+    expect(screen.getByTestId('pin-warnings').textContent).toContain('LA6: a pull-up is on')
+    expect(seen).toHaveLength(0)
   })
 
   it('shows the pod error when la_pins fails', async () => {
@@ -302,6 +338,32 @@ describe('send and capture', () => {
     seq = 8
     fireEvent.click(within(row).getByRole('button', { name: 'Trace' }))
     expect((await screen.findByTestId('trace-note')).textContent).toContain('A newer capture replaced')
+  })
+
+  it('a host with its own capture and pins: no capture view, pin strip or Console tab until a send', async () => {
+    const { call } = fake({
+      wiring: () => ok({ pins: [{ la: 1, wired_to: 'i2c_sda' }, { la: 2, wired_to: 'i2c_scl' }] }),
+      la_pins: () => ok(pins()),
+      capture_la: () => ok({ samples: 2112, sample_rate_hz: 1e6, channels: [], send: { bus: 'i2c', ack: true, rx_hex: '60', nack_at: null } }),
+      decode_la: () => ok({ protocol: 'i2c', transactions: 1 }),
+    })
+    const fetchCapture = vi.fn(async (kind: string) => (kind === 'la' ? { seq: 5, sample_rate_hz: 1e6, count: 2112, edges: [] } : { seq: 0 })) as never
+    const onPinsChange = vi.fn()
+    wrap(<BusDashboard call={call} fetchCapture={fetchCapture} capture="after-send" pins={false} consoleTab={false} onPinsChange={onPinsChange} />)
+    fireEvent.change(await screen.findByLabelText('Address'), { target: { value: '0x76' } })
+    expect(screen.queryByTestId('pin-strip')).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Console' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Capture' })).toBeNull()
+    expect(screen.queryByTestId('send-trace')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Write (hex)'), { target: { value: 'd0' } })
+    fireEvent.click(screen.getByLabelText('Capture it'))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    const trace = await screen.findByTestId('send-trace')
+    expect(trace.textContent).toContain('Capture from the last send')
+    expect(within(trace).queryByRole('button', { name: 'Capture' })).toBeNull()
+    expect(onPinsChange).toHaveBeenCalled()
+    fireEvent.click(screen.getByLabelText('Close the capture from the last send'))
+    await waitFor(() => expect(screen.queryByTestId('send-trace')).toBeNull())
   })
 
   it('a send that fails inside the capture shows its error', async () => {

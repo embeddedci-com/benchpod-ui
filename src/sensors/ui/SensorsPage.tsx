@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Badge, Button, Card, Group, Menu, SegmentedControl, Select, Stack, Table, Text, TextInput, Title, Tooltip } from '@mantine/core'
+import { Alert, Badge, Button, Card, Group, Menu, Select, Stack, Table, Tabs, Text, TextInput, Title, Tooltip } from '@mantine/core'
 import type { DefinitionKind, SensorKind } from '../engine'
 import { KIND_LABELS, SENSOR_KINDS } from '../model'
 import type { SensorPod } from '../pod'
@@ -27,6 +27,8 @@ export type SensorsPageProps = {
   libraryScope?: 'organization' | 'computer'
   /** Shown above the tabs (the host's own cards, e.g. pull resistors, go below). */
   children?: React.ReactNode
+  /** The "Sensors" title on top; false when the host already names the page (a Sensors switch). */
+  heading?: boolean
 }
 
 type View = { tab: 'sensors' | 'stimuli' | 'pod' } & (
@@ -36,7 +38,7 @@ type View = { tab: 'sensors' | 'stimuli' | 'pod' } & (
 )
 
 /** The Sensors page: the library, the user's sensors and stimuli, the editor, what runs on the pod. */
-export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, bench = {}, files = browserFiles, libraryScope = 'organization', children }: SensorsPageProps) {
+export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, bench = {}, files = browserFiles, libraryScope = 'organization', children, heading = true }: SensorsPageProps) {
   const { engine, error: engineError } = useEngine()
   const [view, setView] = useState<View>({ tab: 'sensors', open: null })
   const [mine, setMine] = useState<DefinitionSummary[] | null>(null)
@@ -105,12 +107,15 @@ export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, 
     return [...out]
   }, [status])
 
+  // One line, so it does not push the page down: what to do, and the button.
   const notice = capable === false && (
-    <Alert color="blue" variant="light" title="Update your firmware to run sensors">
-      <Group justify="space-between" gap="sm" wrap="wrap">
-        <Text size="sm">This pod's firmware plays only its built-in sensors. Newer firmware plays any sensor you define here. You can still browse, edit and preview.</Text>
+    <Alert color="blue" variant="light" py={6} data-testid="sensors-firmware-notice">
+      <Group justify="space-between" gap="sm" wrap="nowrap">
+        <Text size="sm" title="This pod's firmware plays only its built-in sensors. Newer firmware plays any sensor you define here.">
+          Update the pod&apos;s firmware to run your own sensors. You can still browse, edit and preview them.
+        </Text>
         {onUpdateFirmware && (
-          <Button size="xs" onClick={onUpdateFirmware} disabled={!podOnline}>
+          <Button size="compact-sm" onClick={onUpdateFirmware} disabled={!podOnline} style={{ flexShrink: 0 }}>
             Update firmware
           </Button>
         )}
@@ -168,14 +173,16 @@ export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, 
   const running = (status?.instances ?? []).filter((i) => i.running)
   return (
     <Stack gap="md">
-      <Group justify="space-between">
-        <Title order={3}>Sensors</Title>
-        {running.length > 0 && (
-          <Badge color="green" variant="light">
-            {running.length} running on the pod
-          </Badge>
-        )}
-      </Group>
+      {heading ? (
+        <Group justify="space-between">
+          <Title order={3}>Sensors</Title>
+          {running.length > 0 && (
+            <Badge color="green" variant="light">
+              {running.length} running on the pod
+            </Badge>
+          )}
+        </Group>
+      ) : null}
       {notice}
       {message && (
         <Alert color={message.color} variant="light" withCloseButton onClose={() => setMessage(null)}>
@@ -183,22 +190,30 @@ export function SensorsPage({ store, pod, podOnline, capable, onUpdateFirmware, 
         </Alert>
       )}
       {mineError && <Alert color="red">{mineError}</Alert>}
-      {/* A segmented control, not tabs: the host page usually sits in a tab called Sensors. */}
-      <SegmentedControl
+      {/* Plain underline tabs: a host's own switch above (Sensors | Signals) stays the one
+          segmented control. */}
+      <Tabs
         aria-label="Sensors view"
         value={view.tab}
         onChange={(t) => {
+          if (!t) return
           setView({ tab: t as View['tab'], open: null })
           void reload()
           if (t === 'pod') refresh()
         }}
-        data={[
-          { value: 'sensors', label: 'Sensors' },
-          { value: 'stimuli', label: 'Stimuli' },
-          { value: 'pod', label: `On the pod${running.length ? ` (${running.length})` : ''}` },
-        ]}
-        style={{ alignSelf: 'flex-start' }}
-      />
+      >
+        <Tabs.List>
+          <Tabs.Tab value="sensors" fz="sm">
+            My sensors
+          </Tabs.Tab>
+          <Tabs.Tab value="stimuli" fz="sm">
+            Stimuli
+          </Tabs.Tab>
+          <Tabs.Tab value="pod" fz="sm">
+            {`On the pod${running.length ? ` (${running.length})` : ''}`}
+          </Tabs.Tab>
+        </Tabs.List>
+      </Tabs>
       {view.tab === 'sensors' && (
         <Stack gap="lg">
           <MyDefinitions

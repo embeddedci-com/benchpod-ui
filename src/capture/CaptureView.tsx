@@ -115,6 +115,7 @@ export function CaptureView({
   fetchCapture,
   refreshKey,
   decodeActions,
+  controls = true,
 }: {
   call: BenchCall
   fetchCapture: FetchCapture
@@ -122,6 +123,8 @@ export function CaptureView({
   refreshKey?: unknown
   /** Extra controls on each decode row (the bus console's Send again). */
   decodeActions?: DecodeRowActions
+  /** false hides the capture controls: the host shows a capture made elsewhere (a send and capture). */
+  controls?: boolean
 }) {
   const colors = useCanvasColors()
   const [mode, setMode] = useState<Mode>('la')
@@ -267,6 +270,7 @@ export function CaptureView({
 
   return (
     <Stack gap="sm" p="sm">
+      {controls ? (
       <Group gap="xs" align="flex-end" wrap="wrap">
         <Select size="xs" w={96} label="Capture" data={MODES} value={mode} onChange={(v) => v && setMode(v as Mode)} allowDeselect={false} />
         <Select size="xs" w={88} label="Length" data={DURATIONS} value={duration} onChange={(v) => v && setDuration(v)} allowDeselect={false} />
@@ -279,6 +283,7 @@ export function CaptureView({
           Capture
         </Button>
       </Group>
+      ) : null}
 
       {error ? (
         <Alert color="red" variant="light" p="xs" withCloseButton onClose={() => setError(undefined)}>
@@ -326,7 +331,7 @@ export function CaptureView({
         </>
       ) : (
         <Text size="sm" c="dimmed">
-          Pick what to capture and press Capture. The agent&apos;s captures show here too.
+          {controls ? 'Pick what to capture and press Capture. The agent\'s captures show here too.' : 'No capture yet.'}
         </Text>
       )}
 

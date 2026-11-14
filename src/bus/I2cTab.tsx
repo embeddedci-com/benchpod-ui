@@ -163,8 +163,8 @@ export function I2cTab({
   return (
     <Stack gap="xs" p="sm">
       <Group gap="xs" align="flex-end" wrap="wrap">
-        <Select size="xs" w={84} label="SDA" data={LA} value={sda} onChange={setSda} placeholder="wiring" clearable comboboxProps={{ withinPortal: true }} />
-        <Select size="xs" w={84} label="SCL" data={LA} value={scl} onChange={setScl} placeholder="wiring" clearable comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={84} label="SDA" data={LA} value={sda} onChange={setSda} placeholder={wiredSda ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
+        <Select size="xs" w={84} label="SCL" data={LA} value={scl} onChange={setScl} placeholder={wiredScl ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
         <Select size="xs" w={96} label="Speed" data={SPEEDS} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} />
         <Stack gap={2}>
           <Text size="xs" fw={500}>
@@ -256,7 +256,7 @@ export function I2cTab({
           </Group>
           <Text size="xs" c="dimmed">
             Write only, read only, or a write then a read (a repeated START). Neither: a probe of the address.
-            {capturing ? ' Capture it: the trace above starts just before SDA falls and decodes the transaction.' : ''}
+            {capturing ? ' Capture it: the trace starts just before SDA falls and decodes the transaction.' : ''}
           </Text>
           {last ? (
             <Text size="xs" ff="monospace" c={last.ack ? 'teal' : 'orange'} data-testid="i2c-result">
