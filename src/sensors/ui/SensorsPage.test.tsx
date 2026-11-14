@@ -31,7 +31,7 @@ afterEach(cleanup)
 
 const lib = { version: '0.1.0', entries: [{ source: bmp280 }, { source: sht4x }] }
 
-function setup(opts: { capable?: boolean | null; pod?: ReturnType<typeof fakePod>; libraryScope?: 'organization' | 'computer' } = {}) {
+function setup(opts: { capable?: boolean | null; pod?: ReturnType<typeof fakePod>; libraryScope?: 'organization' | 'computer'; heading?: boolean } = {}) {
   const store = new MemorySensorStore(
     lib,
     (json, kind) => {
@@ -52,6 +52,7 @@ function setup(opts: { capable?: boolean | null; pod?: ReturnType<typeof fakePod
         onUpdateFirmware={onUpdateFirmware}
         bench={{ pinDefaults: (k): SensorPins => (k === 'i2c' ? { sda: 1, scl: 2 } : {}) }}
         libraryScope={opts.libraryScope}
+        heading={opts.heading}
       />
     </MantineProvider>,
   )
@@ -109,6 +110,18 @@ describe('SensorsPage', () => {
     await screen.findByLabelText('Analog output', {}, { timeout: 2000 })
     expect(screen.getByLabelText('Transfer curve')).toBeTruthy()
     expect(screen.getByText('Start on the pod').closest('button')!.disabled).toBe(true)
+  })
+
+  it('views are underline tabs; a host that names the page drops the heading; the notice is one line', async () => {
+    setup({ capable: false, heading: false })
+    expect(await screen.findByRole('tab', { name: 'My sensors', selected: true })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Stimuli' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'On the pod' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Sensors' })).toBeNull()
+    expect(screen.getByTestId('sensors-firmware-notice').textContent).toContain('Update the pod')
+    cleanup()
+    setup()
+    expect(await screen.findByRole('heading', { name: 'Sensors' })).toBeTruthy()
   })
 
   it('draws a stimulus and starts it on the pod', async () => {
