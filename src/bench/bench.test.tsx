@@ -166,3 +166,36 @@ describe('SPI flash helpers', () => {
     expect(hexDump('48690a', 0x100)).toBe('000100  48 69 0a' + ' '.repeat(39) + '  Hi.')
   })
 })
+
+describe('ConsoleTerminal', () => {
+  it('opens the UART 8N1 by default and with parity and stop bits from the Frame select', async () => {
+    const { ConsoleTerminal } = await import('./ConsoleTerminal')
+    // The log poll and the console's uart_read poll never answer here, so neither loops.
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    const call = vi.fn((tool: string, args?: Record<string, unknown>) => {
+      if (tool !== 'uart_open') return new Promise<never>(() => {})
+      calls.push([tool, args])
+      return Promise.resolve({ text: '{}', structured: { open: true } })
+    })
+    render(
+      <MantineProvider>
+        <ConsoleTerminal call={call} logBase="/api/console" agentRunning={false} />
+      </MantineProvider>,
+    )
+    fireEvent.click(await screen.findByText('Open UART'))
+    await waitFor(() => expect(calls.length).toBe(1))
+    expect(calls[0]).toEqual(['uart_open', {}])
+    cleanup()
+    render(
+      <MantineProvider>
+        <ConsoleTerminal call={call} logBase="/api/console" agentRunning={false} />
+      </MantineProvider>,
+    )
+    fireEvent.click(screen.getAllByLabelText(/Frame/)[0])
+    fireEvent.click(await screen.findByRole('option', { name: '8E2', hidden: true }))
+    fireEvent.click(screen.getByText('Open UART'))
+    await waitFor(() => expect(calls.length).toBe(2))
+    expect(calls[1]).toEqual(['uart_open', { parity: 'even', stop_bits: 2 }])
+  })
+})
