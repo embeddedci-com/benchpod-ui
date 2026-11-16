@@ -71,7 +71,7 @@ describe('validateWiring', () => {
   it('rejects unknown keys and wrong types/ranges', () => {
     const { errors } = validateWiring({
       colour: 'red',
-      version: 2,
+      version: 3,
       la_mv: 2500,
       efuse: 3,
       uart_rx: 0,
@@ -233,5 +233,21 @@ describe('pullLabel', () => {
       'pull-up 4.7k', 'pull-up 4.7k', 'pull-up 2.2k', 'pull-up 2.2k', 'pull-up 10k', 'pull-up 10k',
       'pull-down 10k', 'pull-down 10k', 'none', 'none', 'none', 'none', 'none', 'none',
     ])
+  })
+})
+
+describe('version 2 profiles', () => {
+  it('leave undefined what they do not set', () => {
+    const w = effectiveWiring({ version: 2, uart_rx: 7 })
+    expect(w.version).toBe(2)
+    expect(w.uart_rx).toBe(7)
+    expect([w.uart_tx, w.swd_swclk, w.swd_swdio, w.i2c_sda, w.i2c_scl]).toEqual([null, null, null, null, null])
+    expect([w.la_mv, w.efuse, w.i2c_addr]).toEqual([0, 0, ''])
+    expect(w.uart_baud).toBe(115200)
+  })
+  it('keep version 1 meaning the reference bench', () => {
+    const w = effectiveWiring({ uart_rx: 7 })
+    expect(w.swd_swclk).toBe(11)
+    expect(w.la_mv).toBe(3300)
   })
 })

@@ -228,6 +228,27 @@ export const WIRING_DEFAULTS: Wiring = {
 }
 const DEFAULTS = WIRING_DEFAULTS
 
+/** The base of a version 2 profile (stored on the pod): nothing wired, no I/O voltage (la_mv 0), no
+ *  power rail (efuse 0), no I2C address (''). Only plain call settings keep a value (the UART baud,
+ *  the SWD reset, and the control loop's input scale the Generator tab divides by). */
+export const WIRING_UNDEFINED: Wiring = {
+  ...WIRING_DEFAULTS,
+  version: 2,
+  la_mv: 0,
+  efuse: 0,
+  uart_rx: null,
+  uart_tx: null,
+  i2c_sda: null,
+  i2c_scl: null,
+  i2c_addr: '',
+  swd_swclk: null,
+  swd_swdio: null,
+  loop_output_cal: [],
+}
+
+/** The wiring profile version new profiles are saved as. */
+export const WIRING_VERSION = 2
+
 /** The control-loop keys: part of the stored object, but owned by the Generator tab, not the editor. */
 export const LOOP_INPUT_KEYS = [
   'loop_input_unit',
@@ -372,7 +393,8 @@ function coerceSignal(s: Record<string, unknown>): WiringSignal {
 
 /** Effective profile: defaults overlaid with the stored object (absent → default, pin null → not wired). */
 export function effectiveWiring(stored: Record<string, unknown>): Wiring {
-  return { ...DEFAULTS, ...coerceStoredWiring(stored) }
+  const base = stored.version === 2 ? WIRING_UNDEFINED : DEFAULTS
+  return { ...base, ...coerceStoredWiring(stored), version: stored.version === 2 ? 2 : base.version }
 }
 
 export type WiringIssues = { errors: WiringFieldIssue[]; warnings: WiringFieldIssue[] }
@@ -426,7 +448,7 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
   for (const k of Object.keys(raw)) {
     if (!KNOWN_KEYS.has(k) && raw[k] !== undefined) err(k, `unknown key "${k}"; remove it`)
   }
-  if (has('version') && raw.version !== 1) err('version', 'version must be 1')
+  if (has('version') && raw.version !== 1 && raw.version !== 2) err('version', 'version must be 1 or 2')
   if (has('la_mv') && raw.la_mv !== 1800 && raw.la_mv !== 3300)
     err('la_mv', 'la_mv must be 1800 or 3300 (the LA bank voltage in mV)')
   if (has('efuse') && raw.efuse !== 1 && raw.efuse !== 2) err('efuse', 'efuse must be 1 (Internal 5 V, eFuse 1) or 2 (External, eFuse 2)')
