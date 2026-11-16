@@ -60,7 +60,7 @@ export function ConsoleTerminal({
   const [line, setLine] = useState('')
   const [ending, setEnding] = useState('lf')
   const [baud, setBaud] = useState<number | ''>('')
-  // Data bits, parity and stop bits: 8N1 unless set (Modbus RTU is 8E1 or 8N2). Pod firmware 3.10.8+.
+  // Data bits, parity and stop bits: 8N1 unless set. Pod firmware 3.10.8+.
   const [frame, setFrame] = useState('8N1')
   const [rx, setRx] = useState<string | null>(null)
   const [tx, setTx] = useState<string | null>(null)
