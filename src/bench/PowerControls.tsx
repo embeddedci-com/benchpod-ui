@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Badge, Box, Group, Stack, Switch, Text, useComputedColorScheme } from '@mantine/core'
+import { Alert, Badge, Box, Button, Group, Select, Stack, Switch, Text, useComputedColorScheme } from '@mantine/core'
 import { fmtSi } from '../results/AdcEnvelope'
 import { benchData, benchError, type BenchCall } from './benchCall'
 
@@ -22,8 +22,23 @@ const RAILS = [
 const POLL_MS = 1000
 const HISTORY = 60
 
+/** What the MCP `wiring` tool reports about the profile and the pod's stored profiles. */
+type WiringInfo = {
+  profile_name?: string
+  la_voltage?: number | null
+  efuse?: number | null
+  default_profile?: string | null
+  profiles?: { name: string; rev: number }[]
+}
+
+const railName = (efuse?: number | null) => (efuse === 1 ? 'internal 5 V' : efuse === 2 ? 'external' : 'not set')
+
 export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pollMs?: number }) {
   const [status, setStatus] = useState<PowerStatus | null>(null)
+  // Powering the board on always goes with a wiring profile: its I/O voltage is set first.
+  const [wiring, setWiring] = useState<WiringInfo | null>(null)
+  const [profile, setProfile] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<{ efuse: number; why: string } | null>(null)
   const [error, setError] = useState<string | undefined>()
   const [busy, setBusy] = useState<number | null>(null)
   const [history, setHistory] = useState<{ internal: number; external: number }[]>([])
@@ -39,6 +54,17 @@ export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pol
       setHistory((h) => [...h, { internal: s.internal.enabled ? s.internal.current : 0, external: s.external.enabled ? s.external.current : 0 }].slice(-HISTORY))
     } else setError(benchError(r))
   }
+
+  const readWiring = async () => {
+    const w = benchData<WiringInfo>(await call('wiring', {}))
+    if (!alive.current || !w) return
+    setWiring(w)
+    setProfile((p) => p ?? (w.profile_name || w.default_profile || null))
+  }
+  useEffect(() => {
+    void readWiring()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [call])
 
   useEffect(() => {
     alive.current = true
@@ -56,20 +82,64 @@ export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pol
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [call, pollMs])
 
-  const toggle = async (efuse: number, on: boolean) => {
+  const toggle = async (efuse: number, on: boolean, confirmed = false) => {
+    // Ask only when something does not match, so the normal case stays one click.
+    if (on && !confirmed && wiring?.efuse && wiring.efuse !== efuse && (!profile || profile === wiring.profile_name)) {
+      setConfirm({ efuse, why: `The wiring profile's rail is ${railName(wiring.efuse)}, not ${railName(efuse)}.` })
+      return
+    }
+    setConfirm(null)
     setBusy(efuse)
     try {
-      const r = await call(on ? 'power_on' : 'power_off', { efuse })
+      const args: Record<string, unknown> = { efuse }
+      if (on && profile && wiring?.profiles?.length) args.wiring_profile = profile
+      const r = await call(on ? 'power_on' : 'power_off', args)
       const e = benchError(r)
       if (e) setError(e)
       await read()
+      if (on) await readWiring()
     } finally {
       setBusy(null)
     }
   }
+  const profiles = wiring?.profiles ?? []
 
   return (
     <Stack gap="sm" p="sm">
+      <Group gap="xs" align="flex-end" wrap="wrap">
+        {profiles.length ? (
+          <Select
+            size="xs"
+            label="Power on with wiring"
+            w={200}
+            data={profiles.map((p) => ({ value: p.name, label: p.name === wiring?.default_profile ? `${p.name} (default)` : p.name }))}
+            value={profile}
+            onChange={setProfile}
+            allowDeselect={false}
+            disabled={busy !== null}
+          />
+        ) : null}
+        <Text size="xs" c="dimmed" pb={4}>
+          {wiring
+            ? `${wiring.profile_name ? `Wiring ${wiring.profile_name}: ` : ''}I/O ${wiring.la_voltage ? `${wiring.la_voltage} V` : 'not set'}, rail ${railName(wiring.efuse)}`
+            : ''}
+        </Text>
+      </Group>
+      {confirm ? (
+        <Alert color="orange" variant="light" p="xs">
+          <Group gap="xs" justify="space-between" wrap="wrap">
+            <Text size="xs">{confirm.why} Power on anyway?</Text>
+            <Group gap={6}>
+              <Button size="compact-xs" onClick={() => void toggle(confirm.efuse, true, true)}>
+                Power on
+              </Button>
+              <Button size="compact-xs" variant="subtle" onClick={() => setConfirm(null)}>
+                Cancel
+              </Button>
+            </Group>
+          </Group>
+        </Alert>
+      ) : null}
       {RAILS.map((rail) => {
         const r = status?.[rail.key]
         return (

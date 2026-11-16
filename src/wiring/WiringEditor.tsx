@@ -1,3 +1,4 @@
+import { WiringDiagram, changedChannels } from './WiringDiagram'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   ActionIcon,
@@ -207,6 +208,7 @@ export function WiringEditor({
   onSave,
   saveLabel = 'Save wiring',
   note,
+  title,
 }: {
   /** The profile object as stored (the MCP server's wiring `profile`). Unknown keys are kept. */
   profile: Record<string, unknown>
@@ -216,6 +218,8 @@ export function WiringEditor({
   onSave: (profile: Record<string, unknown>) => Promise<string | undefined>
   saveLabel?: string
   note?: ReactNode
+  /** The profile's name, for the diagram's title and its exported file. */
+  title?: string
 }) {
   const [draft, setDraft] = useState<Record<string, unknown>>(profile)
   const [saving, setSaving] = useState(false)
@@ -226,6 +230,7 @@ export function WiringEditor({
   }, [profile])
 
   const w = useMemo(() => effectiveWiring(draft), [draft])
+  const changed = useMemo(() => changedChannels(w, effectiveWiring(profile)), [w, profile])
   const issues = useMemo(() => validateWiring(draft), [draft])
   const fieldErr = useMemo(() => wiringFieldErrors(w, issues.errors), [w, issues])
   const dirty = JSON.stringify(draft) !== JSON.stringify(profile)
@@ -253,9 +258,11 @@ export function WiringEditor({
     setError(undefined)
     try {
       // Explicit values for every key the editor shows, the rest as they were.
-      const out: Record<string, unknown> = { ...draft, version: 1 }
+      // Version 2: every key the editor shows, written out; what is not set is left out (undefined).
+      const out: Record<string, unknown> = { ...draft, version: 2 }
       for (const k of ['la_mv', 'efuse', 'uart_rx', 'uart_tx', 'uart_baud', 'i2c_sda', 'i2c_scl', 'i2c_addr', 'swd_swclk', 'swd_swdio', 'swd_nreset', 'swd_target', 'spi_sclk', 'spi_mosi', 'spi_miso', 'spi_cs', 'signals', 'dut_dirs'] as const)
         out[k] = w[k]
+      for (const k of ['la_mv', 'efuse', 'i2c_addr'] as const) if (!out[k]) delete out[k]
       const e = await onSave(out)
       if (e) setError(e)
       else setSaved(true)
@@ -282,11 +289,12 @@ export function WiringEditor({
             <SegmentedControl
               size="xs"
               data={[
+                { value: '0', label: 'Not set' },
                 { value: '3300', label: '3.3 V' },
                 { value: '1800', label: '1.8 V' },
               ]}
               value={String(w.la_mv)}
-              onChange={(v) => set({ la_mv: Number(v) })}
+              onChange={(v) => set({ la_mv: Number(v) || undefined })}
             />
           </Stack>
           <Stack gap={2}>
@@ -296,11 +304,12 @@ export function WiringEditor({
             <SegmentedControl
               size="xs"
               data={[
+                { value: '0', label: 'Not set' },
                 { value: '1', label: 'Internal 5 V' },
                 { value: '2', label: 'External' },
               ]}
               value={String(w.efuse)}
-              onChange={(v) => set({ efuse: Number(v) })}
+              onChange={(v) => set({ efuse: Number(v) || undefined })}
             />
           </Stack>
         </Group>
@@ -405,6 +414,10 @@ export function WiringEditor({
           role and signal has a default; change it only when your board differs. Sent to the pod whenever the wiring is applied.
         </Text>
         <WiringDirections wiring={w} onChange={(d) => set({ dut_dirs: d })} errors={fieldErr} />
+      </Section>
+
+      <Section title="Diagram">
+        <WiringDiagram wiring={w} changed={changed} title={title} />
       </Section>
 
       <Section title="Channels">
