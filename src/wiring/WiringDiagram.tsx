@@ -27,7 +27,7 @@ function roleKind(role: string): Kind {
 }
 
 const ROW = 26
-const TOP = 44
+const TOP = 60
 const LEFT_W = 92
 const RIGHT_X = 300
 const WIDTH = 460
