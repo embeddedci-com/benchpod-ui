@@ -1,3 +1,4 @@
+import { WiringDiagram, changedChannels } from './WiringDiagram'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   ActionIcon,
@@ -207,6 +208,7 @@ export function WiringEditor({
   onSave,
   saveLabel = 'Save wiring',
   note,
+  title,
 }: {
   /** The profile object as stored (the MCP server's wiring `profile`). Unknown keys are kept. */
   profile: Record<string, unknown>
@@ -216,6 +218,8 @@ export function WiringEditor({
   onSave: (profile: Record<string, unknown>) => Promise<string | undefined>
   saveLabel?: string
   note?: ReactNode
+  /** The profile's name, for the diagram's title and its exported file. */
+  title?: string
 }) {
   const [draft, setDraft] = useState<Record<string, unknown>>(profile)
   const [saving, setSaving] = useState(false)
@@ -226,6 +230,7 @@ export function WiringEditor({
   }, [profile])
 
   const w = useMemo(() => effectiveWiring(draft), [draft])
+  const changed = useMemo(() => changedChannels(w, effectiveWiring(profile)), [w, profile])
   const issues = useMemo(() => validateWiring(draft), [draft])
   const fieldErr = useMemo(() => wiringFieldErrors(w, issues.errors), [w, issues])
   const dirty = JSON.stringify(draft) !== JSON.stringify(profile)
@@ -409,6 +414,10 @@ export function WiringEditor({
           role and signal has a default; change it only when your board differs. Sent to the pod whenever the wiring is applied.
         </Text>
         <WiringDirections wiring={w} onChange={(d) => set({ dut_dirs: d })} errors={fieldErr} />
+      </Section>
+
+      <Section title="Diagram">
+        <WiringDiagram wiring={w} changed={changed} title={title} />
       </Section>
 
       <Section title="Channels">

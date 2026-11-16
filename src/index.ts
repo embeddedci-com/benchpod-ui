@@ -45,12 +45,16 @@ export { CanTab, parseCanId, canDataOk } from './bus/CanTab'
 export { TransactionLog } from './bus/TransactionLog'
 export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
 export { WiringEditor, WiringChannelMap, WiringDirections } from './wiring/WiringEditor'
+export { WiringDiagram, changedChannels } from './wiring/WiringDiagram'
+export { WiringProfilePicker, WIRING_PROFILE_NAME_RE, type WiringProfileItem } from './wiring/WiringProfilePicker'
 export {
   effectiveWiring,
   validateWiring,
   laChannelMap,
   laChannelLabel,
   WIRING_DEFAULTS,
+  WIRING_UNDEFINED,
+  WIRING_VERSION,
   WIRING_ROLES,
   WIRING_DUT_DIRS,
   WIRING_DUT_DIR_LABELS,
