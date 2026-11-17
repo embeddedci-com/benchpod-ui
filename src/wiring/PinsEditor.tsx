@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Alert, Box, Group, Paper, Select, SimpleGrid, Stack, Switch, Text, TextInput, UnstyledButton } from '@mantine/core'
+import { ownerLabel, pinWarnings, type LaPin } from '../bus/PinStrip'
 import { LA_CHANNEL_COUNT, WIRING_ROLES, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
 import {
   assignPin,
@@ -45,14 +46,15 @@ function pinFields(p: PinView): string[] {
   return p.users.map((u) => (u.kind === 'role' ? u.role : `signals[${u.index}]`))
 }
 
-function PinTile({ p, selected, error, onClick }: { p: PinView; selected: boolean; error: boolean; onClick: () => void }) {
+function PinTile({ p, selected, error, warned, onClick }: { p: PinView; selected: boolean; error: boolean; warned: boolean; onClick: () => void }) {
   const color = p.kind ? PIN_KIND_COLORS[p.kind] : null
   const bad = error || p.users.length > 1
   return (
     <UnstyledButton
       onClick={onClick}
       aria-pressed={selected}
-      aria-label={`LA${p.la}: ${p.short}${p.pullOn && p.pull.dir ? `, pull-${p.pull.dir} on` : ''}`}
+      data-testid={`pin-tile-${p.la}`}
+      aria-label={`LA${p.la}: ${p.short}${p.pullOn && p.pull.dir ? `, pull-${p.pull.dir} on` : ''}${warned ? ', warning' : ''}`}
       style={{
         position: 'relative',
         minWidth: 0,
@@ -67,6 +69,11 @@ function PinTile({ p, selected, error, onClick }: { p: PinView; selected: boolea
         outlineOffset: 1,
       }}
     >
+      {warned ? (
+        <Text c="orange.7" fw={700} style={{ position: 'absolute', top: 1, left: 4, fontSize: 10, lineHeight: '12px' }} aria-hidden>
+          !
+        </Text>
+      ) : null}
       {p.pullOn && p.pull.dir ? (
         <Box style={{ position: 'absolute', top: 3, right: 4, lineHeight: 0 }}>
           <PullDot dir={p.pull.dir} />
@@ -92,6 +99,7 @@ export function PinsEditor({
   warnings,
   disabled,
   initialPin = 1,
+  live,
 }: {
   /** The profile, effective (defaults filled in). */
   wiring: Wiring
@@ -102,8 +110,17 @@ export function PinsEditor({
   warnings?: WiringFieldIssue[]
   disabled?: boolean
   initialPin?: number
+  /** What the pod reports for each pin right now (la_pins), when the host reads it: warnings, live level, owner. */
+  live?: LaPin[] | null
 }) {
   const [sel, setSel] = useState(initialPin)
+  const [picked, setPicked] = useState(false)
+  // Until a pin is clicked, show the first one the pod has a warning for (the read can come later).
+  const firstWarned = live?.find((x) => pinWarnings(x).length)?.la
+  useEffect(() => {
+    if (!picked && firstWarned) setSel(firstWarned)
+  }, [picked, firstWarned])
+  const liveOf = (la: number) => live?.find((x) => x.la === la)
   const pins = useMemo(() => pinViews(wiring), [wiring])
   const p = pins[Math.min(Math.max(sel, 1), LA_CHANNEL_COUNT) - 1]
   const fieldErr = (f: string) => errors?.get(f)
@@ -163,7 +180,20 @@ export function PinsEditor({
 
       <SimpleGrid cols={7} spacing={4} verticalSpacing={4}>
         {pins.map((x) => (
-          <PinTile key={x.la} p={x} selected={x.la === p.la} error={pinHasError(x)} onClick={() => setSel(x.la)} />
+          <PinTile
+            key={x.la}
+            p={x}
+            selected={x.la === p.la}
+            error={pinHasError(x)}
+            warned={(() => {
+              const l = liveOf(x.la)
+              return !!l && pinWarnings(l).length > 0
+            })()}
+            onClick={() => {
+              setPicked(true)
+              setSel(x.la)
+            }}
+          />
         ))}
       </SimpleGrid>
       <Group gap={10} wrap="wrap">
@@ -199,6 +229,26 @@ export function PinsEditor({
             LA{p.la}
             {p.users.length === 1 ? ` · ${p.short}` : ''}
           </Text>
+          {(() => {
+            const l = liveOf(p.la)
+            if (!l) return null
+            const warns = pinWarnings(l)
+            const level = typeof l.level === 'number' ? (l.level ? 'high' : 'low') : null
+            return (
+              <Stack gap={2} data-testid="pin-live">
+                <Text size="xs" c="dimmed">
+                  On the pod now: {ownerLabel(l)}
+                  {level ? `, ${level}` : ''}
+                  {l.pull_on ? `, pull-${l.pull === 'down' ? 'down' : 'up'} on` : ''}
+                </Text>
+                {warns.map((w) => (
+                  <Text key={w} size="xs" c="orange.8">
+                    {w}
+                  </Text>
+                ))}
+              </Stack>
+            )
+          })()}
           {p.users.length > 1 ? (
             <Alert color="red" variant="light" p="xs">
               <Text size="xs">

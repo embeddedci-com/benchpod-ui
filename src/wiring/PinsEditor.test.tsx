@@ -48,4 +48,12 @@ describe('PinsEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: /^LA4: UART TX/ }))
     expect(screen.getByLabelText('Baud (both UART pins)', { selector: 'input' })).toBeTruthy()
   })
+  it('shows what the pod reports: a warning mark on the pin, the words in its editor', () => {
+    const live = [{ la: 6, function: 'gpio', gpio: 'output', level: 1, pull: 'up', pull_on: true, warn: 1 }]
+    render(<MantineProvider><PinsEditor wiring={start} onChange={() => {}} live={live} /></MantineProvider>)
+    expect(screen.getByRole('button', { name: 'LA6: free, warning' })).toBeTruthy()
+    // It opens on the pin with the warning.
+    expect(screen.getByTestId('pin-live').textContent).toMatch(/gpio out, high, pull-up on/)
+    expect(screen.getByText(/A pull resistor is on under a pin the pod drives/)).toBeTruthy()
+  })
 })
