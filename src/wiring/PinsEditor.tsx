@@ -160,6 +160,13 @@ export function PinsEditor({
           onChange={(v) => v != null && onChange({ la_mv: Number(v) || undefined })}
           allowDeselect={false}
           error={fieldErr('la_mv')}
+          description={
+            wiring.la_mv ? undefined : (
+              <Text component="span" size="xs" c="orange.8">
+                Set your board&apos;s: the pod needs it before it uses the pins
+              </Text>
+            )
+          }
           disabled={disabled}
         />
         <Select
