@@ -44,12 +44,17 @@ export { SpiTab, spiPinArgs } from './bus/SpiTab'
 export { CanTab, parseCanId, canDataOk } from './bus/CanTab'
 export { TransactionLog } from './bus/TransactionLog'
 export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
-export { WiringEditor, WiringChannelMap, WiringDirections } from './wiring/WiringEditor'
+export { PinsEditor, PIN_KIND_COLORS } from './wiring/PinsEditor'
+export { pinViews, assignPin, updateSignal, setPinPull, pullSwitchLabel, signalUse, nextSignalName, type PinView, type PinKind, type SignalUse } from './wiring/pins'
 export { WiringDiagram, changedChannels } from './wiring/WiringDiagram'
-export { WiringProfilePicker, WIRING_PROFILE_NAME_RE, type WiringProfileItem } from './wiring/WiringProfilePicker'
+export { WiringProfilePicker, WIRING_PROFILE_NAME_RE, MAX_WIRING_PROFILES, type WiringProfileItem, type NewProfileFrom } from './wiring/WiringProfilePicker'
 export {
   effectiveWiring,
   validateWiring,
+  coerceStoredWiring,
+  wiringFieldErrors,
+  wiringProfileJson,
+  PULL_CHANNELS,
   laChannelMap,
   laChannelLabel,
   WIRING_DEFAULTS,

@@ -34,7 +34,7 @@ describe('WiringDiagram', () => {
 })
 
 describe('WiringProfilePicker', () => {
-  it('marks the default and offers make default and delete for the others', () => {
+  it('marks the active profile and offers make active for the others', () => {
     wrap(
       <WiringProfilePicker
         profiles={[
@@ -47,8 +47,7 @@ describe('WiringProfilePicker', () => {
         onDelete={() => {}}
       />,
     )
-    expect(screen.getByText('Make default')).toBeTruthy()
-    expect(screen.getByText('Delete')).toBeTruthy()
-    expect(screen.getByText('Revision 1, saved from mcp')).toBeTruthy()
+    expect(screen.getByText('Make active')).toBeTruthy()
+    expect(screen.getByLabelText('More profile actions')).toBeTruthy()
   })
 })

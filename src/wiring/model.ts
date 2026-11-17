@@ -94,6 +94,12 @@ export type Wiring = {
    */
   dut_dirs: Record<string, WiringDutDir>
   /**
+   * The LA channels whose pull resistor is on (LA1-LA8 have one each, fixed up or down, see LA_PULLS).
+   * Powering the board on with the profile switches exactly these on and the other pull resistors
+   * off. null = the profile leaves the pull resistors as they are (profiles saved before this key).
+   */
+  pulls: number[] | null
+  /**
    * The control loop's INPUT sense chain — what the ADC is actually wired to, so the loop can
    * be configured in the unit the bench measures instead of raw ADC codes. Lives here rather
    * than in `cap.*` because it is bench wiring, not something the pod can announce about
@@ -208,6 +214,7 @@ export const WIRING_DEFAULTS: Wiring = {
   spi_cs: null,
   signals: [],
   dut_dirs: {},
+  pulls: null,
   loop_input_unit: DEFAULT_LOOP_INPUT.unit,
   loop_input_mv_at_zero: DEFAULT_LOOP_INPUT.mvAtZero,
   loop_input_mv_per_unit: DEFAULT_LOOP_INPUT.mvPerUnit,
@@ -286,6 +293,18 @@ function isLaChannel(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= LA_CHANNEL_COUNT
 }
 
+/** The LA channels that have a pull resistor (LA1-LA8). */
+export const PULL_CHANNELS: number[] = LA_PULLS.filter((p) => p.dir).map((p) => p.la)
+
+function hasPullResistor(v: unknown): v is number {
+  return isLaChannel(v) && PULL_CHANNELS.includes(v)
+}
+
+/** A pulls list sorted, without duplicates. */
+export function normalizePulls(las: number[]): number[] {
+  return [...new Set(las)].sort((a, b) => a - b)
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
@@ -307,6 +326,9 @@ export function coerceStoredWiring(remote: Record<string, unknown>): StoredWirin
       if (Array.isArray(v)) out.signals = v.filter(isRecord).map(coerceSignal)
     } else if (k === 'dut_dirs') {
       if (isRecord(v)) out.dut_dirs = Object.fromEntries(Object.entries(v).filter(([, d]) => isDutDir(d)))
+    } else if (k === 'pulls') {
+      if (v === null) out.pulls = null
+      else if (Array.isArray(v)) out.pulls = normalizePulls(v.filter(hasPullResistor))
     } else if (k === 'loop_input_entry') {
       if (v === 'shunt' || v === 'mv_per_unit') out[k] = v
     } else if (k === 'loop_output_path') {
@@ -422,16 +444,20 @@ function channelUsers(w: Wiring, skipFields: Set<string> = new Set()): ChannelUs
 /** Pull-resistor warnings for the effective profile (save allowed, reported). */
 function pullWarnings(w: Wiring): WiringFieldIssue[] {
   const out: WiringFieldIssue[] = []
+  // null: the profile doesn't set the pulls, so a pull-down may be on.
+  const pullOn = (la: number) => w.pulls === null || w.pulls.includes(la)
   for (const role of ['i2c_sda', 'i2c_scl'] as const) {
     const la = w[role]
     if (!isLaChannel(la)) continue
     if (la >= 9) out.push({ field: role, message: 'no pod pull-up on LA9-LA14; the bus needs external pull-ups' })
-    else if (la === 7 || la === 8)
+    else if ((la === 7 || la === 8) && pullOn(la))
       out.push({ field: role, message: 'LA7/LA8 have 10k pull-downs; keep them disabled on an open-drain bus' })
   }
-  if (w.uart_rx === 7 || w.uart_rx === 8) {
+  if ((w.uart_rx === 7 || w.uart_rx === 8) && pullOn(w.uart_rx)) {
     out.push({ field: 'uart_rx', message: 'LA7/LA8 have pull-downs; the UART idles high — keep the pull disabled' })
   }
+  if (w.la_mv === 1800 && w.pulls?.length)
+    out.push({ field: 'pulls', message: 'the pull resistors work at 3.3 V only: at 1.8 V they stay off' })
   return out
 }
 
@@ -523,6 +549,15 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
         }
       })
     }
+  }
+
+  if (has('pulls') && raw.pulls !== null) {
+    const pulls = raw.pulls
+    if (!Array.isArray(pulls)) err('pulls', 'pulls must be a list of LA channels whose pull resistor is on, e.g. [1, 2]')
+    else
+      pulls.forEach((la, i) => {
+        if (!hasPullResistor(la)) err(`pulls[${i}]`, `pulls[${i}] must be an LA channel with a pull resistor (LA1-LA8), got ${JSON.stringify(la)}`)
+      })
   }
 
   if (has('dut_dirs')) {
