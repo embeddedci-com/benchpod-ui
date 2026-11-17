@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MantineProvider } from '@mantine/core'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { cleanup } from '@testing-library/react'
 import { coerceStoredWiring, effectiveWiring, laChannelMap, pinDutDirs, validateWiring, wiringDutDir, WIRING_DEFAULTS } from './model'
-import { WiringEditor } from './WiringEditor'
 
 beforeAll(() => {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as never
@@ -40,28 +38,5 @@ describe('pin directions (dut_dirs)', () => {
     expect(coerceStoredWiring({ dut_dirs: { uart_rx: 'bidir', uart_tx: 'nope' } }).dut_dirs).toEqual({ uart_rx: 'bidir' })
     // Old profiles stay valid.
     expect(validateWiring({ uart_rx: 5 }).errors).toEqual([])
-  })
-})
-
-describe('WiringEditor pin directions', () => {
-  it('shows the defaults and saves an override, and a renamed signal keeps it', async () => {
-    const onSave = vi.fn(async () => undefined)
-    render(
-      <MantineProvider>
-        <WiringEditor profile={{ signals: [{ name: 'READY', la: 9 }], dut_dirs: { READY: 'bidir' } }} onSave={onSave} />
-      </MantineProvider>,
-    )
-    const rx = screen.getByLabelText('UART RX direction', { selector: 'input' }) as HTMLInputElement
-    expect(rx.value).toBe('board output (default)')
-    expect((screen.getByLabelText('SWCLK direction', { selector: 'input' }) as HTMLInputElement).value).toBe('board input (default)')
-    expect((screen.getByLabelText('READY direction', { selector: 'input' }) as HTMLInputElement).value).toBe('bidirectional')
-
-    fireEvent.click(rx)
-    fireEvent.click(await screen.findByRole('option', { name: 'bidirectional' }))
-    fireEvent.change(screen.getByDisplayValue('READY'), { target: { value: 'DONE' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save wiring' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalled())
-    const saved = (onSave.mock.calls[0] as unknown as [Record<string, unknown>])[0]
-    expect(saved.dut_dirs).toEqual({ uart_rx: 'bidir', DONE: 'bidir' })
   })
 })

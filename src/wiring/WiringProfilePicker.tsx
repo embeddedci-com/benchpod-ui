@@ -1,14 +1,16 @@
-import { useState } from 'react'
-import { Badge, Button, Group, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core'
+import { useState, type ReactNode } from 'react'
+import { ActionIcon, Badge, Button, Group, Menu, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 
-// The wiring profiles stored on the pod: pick one to open, make it the default, delete it, or
-// start a new one. The pod keeps up to 16; one is the default (what every tool uses when it names
-// none). The host app supplies the list and does the calls (the web app through embeddedci.com,
-// the desktop app through the MCP tools).
+// The wiring profiles stored on the pod, in one row: pick the one to look at and edit, see which
+// is active (the pod's default: powering the board on uses it, and so does every tool that names
+// no profile), make another one active, start a new one. Delete and the host's extras (copy as
+// JSON, the diagram) sit in the ⋯ menu. The host supplies the list and does the calls (the web app
+// through embeddedci.com, the desktop app through the MCP tools).
 
 export type WiringProfileItem = {
   name: string
   rev: number
+  /** The active profile: the pod's default. */
   isDefault: boolean
   /** Who saved the revision shown last, when the host knows: "web", "mcp", "sdk", "cli", "pod". */
   source?: string
@@ -17,6 +19,10 @@ export type WiringProfileItem = {
 }
 
 export const WIRING_PROFILE_NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/
+export const MAX_WIRING_PROFILES = 16
+
+/** How a new profile starts: a copy of the one on screen, or with nothing wired. */
+export type NewProfileFrom = 'copy' | 'empty'
 
 export function WiringProfilePicker({
   profiles,
@@ -25,16 +31,20 @@ export function WiringProfilePicker({
   onMakeDefault,
   onDelete,
   onCreate,
+  menu,
   busy,
   readOnly,
 }: {
   profiles: WiringProfileItem[]
   selected: string | null
   onSelect: (name: string) => void
+  /** Make this profile the active one (the pod's default). */
   onMakeDefault?: (name: string) => void
   onDelete?: (name: string) => void
-  /** Start a new profile with this name (the host decides what it starts from). */
-  onCreate?: (name: string) => void
+  /** Start a new profile with this name. */
+  onCreate?: (name: string, from: NewProfileFrom) => void
+  /** More entries for the ⋯ menu (Menu.Item elements). */
+  menu?: ReactNode
   busy?: boolean
   /** The pod is offline: show the last copy, allow no changes. */
   readOnly?: boolean
@@ -48,83 +58,96 @@ export function WiringProfilePicker({
       : profiles.some((p) => p.name === newName)
         ? 'the pod already has a profile with this name'
         : undefined
+  const create = (from: NewProfileFrom) => {
+    onCreate?.(newName, from)
+    setNewName('')
+    setCreating(false)
+  }
+  const canDelete = !!(current && !current.isDefault && onDelete)
 
   return (
     <Stack gap={6}>
-      <Group gap="xs" align="flex-end" wrap="wrap">
+      <Group gap="xs" wrap="nowrap" align="center">
         <Select
           size="xs"
-          label="Wiring profile"
-          w={240}
-          data={profiles.map((p) => ({ value: p.name, label: p.isDefault ? `${p.name} (default)` : p.name }))}
+          aria-label="Wiring profile"
+          style={{ flex: 1, minWidth: 120 }}
+          data={profiles.map((p) => ({ value: p.name, label: p.isDefault ? `${p.name} (active)` : p.name }))}
           value={selected}
           onChange={(v) => v && onSelect(v)}
           disabled={busy || profiles.length === 0}
           placeholder={profiles.length ? 'Pick a profile' : 'No profiles on the pod yet'}
           allowDeselect={false}
         />
-        {current && !current.isDefault && onMakeDefault ? (
-          <Tooltip label="Every tool that names no profile uses the default" withArrow>
-            <Button size="xs" variant="light" disabled={busy || readOnly} onClick={() => onMakeDefault(current.name)}>
-              Make default
+        {current?.isDefault ? (
+          <Tooltip label="Powering the board on uses this profile, and so does every tool that names no profile" withArrow multiline w={240}>
+            <Badge size="sm" color="green" variant="light">
+              Active
+            </Badge>
+          </Tooltip>
+        ) : current && onMakeDefault ? (
+          <Tooltip label="Use this profile when the board powers on, and in every tool that names no profile" withArrow multiline w={240}>
+            <Button size="compact-xs" variant="light" disabled={busy || readOnly} onClick={() => onMakeDefault(current.name)}>
+              Make active
             </Button>
           </Tooltip>
         ) : null}
-        {current && !current.isDefault && onDelete ? (
-          <Button size="xs" variant="subtle" color="red" disabled={busy || readOnly} onClick={() => onDelete(current.name)}>
-            Delete
+        {onCreate ? (
+          <Button
+            size="compact-xs"
+            variant="default"
+            disabled={busy || readOnly || profiles.length >= MAX_WIRING_PROFILES}
+            onClick={() => setCreating((c) => !c)}
+          >
+            New
           </Button>
         ) : null}
-        {onCreate && !creating ? (
-          <Button size="xs" variant="subtle" disabled={busy || readOnly || profiles.length >= 16} onClick={() => setCreating(true)}>
-            New profile
-          </Button>
+        {canDelete || menu ? (
+          <Menu position="bottom-end" withinPortal>
+            <Menu.Target>
+              <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More profile actions">
+                ⋯
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              {menu}
+              {canDelete && current ? (
+                <Menu.Item color="red" disabled={busy || readOnly} onClick={() => onDelete?.(current.name)}>
+                  Delete {current.name}
+                </Menu.Item>
+              ) : null}
+            </Menu.Dropdown>
+          </Menu>
         ) : null}
       </Group>
       {creating && onCreate ? (
         <Group gap="xs" align="flex-start" wrap="wrap">
           <TextInput
             size="xs"
-            w={240}
+            style={{ flex: 1, minWidth: 140 }}
             placeholder="nrf52840-dk"
             value={newName}
             onChange={(e) => setNewName(e.currentTarget.value.trim().toLowerCase())}
             error={nameError}
             aria-label="New profile name"
+            data-autofocus
           />
-          <Button
-            size="xs"
-            disabled={!newName || !!nameError || busy}
-            onClick={() => {
-              onCreate(newName)
-              setNewName('')
-              setCreating(false)
-            }}
-          >
-            Create
+          <Button size="xs" disabled={!newName || !!nameError || busy} onClick={() => create('copy')}>
+            {current ? `Copy of ${current.name}` : 'Create'}
           </Button>
+          {current ? (
+            <Button size="xs" variant="default" disabled={!newName || !!nameError || busy} onClick={() => create('empty')}>
+              Empty
+            </Button>
+          ) : null}
           <Button size="xs" variant="subtle" onClick={() => setCreating(false)}>
             Cancel
           </Button>
         </Group>
       ) : null}
-      {current ? (
-        <Group gap={6}>
-          {current.isDefault ? (
-            <Badge size="xs" variant="light">
-              default
-            </Badge>
-          ) : null}
-          <Text size="xs" c="dimmed">
-            Revision {current.rev}
-            {current.source ? `, saved from ${current.source}` : ''}
-            {current.updatedAt ? ` on ${new Date(current.updatedAt).toLocaleString()}` : ''}
-          </Text>
-        </Group>
-      ) : null}
       {readOnly ? (
         <Text size="xs" c="dimmed">
-          The pod is offline: this is the last copy. Profiles live on the pod, so they can be changed while it is connected.
+          The pod is offline: this is the last copy. Profiles live on the pod, so you can change them while it&apos;s connected.
         </Text>
       ) : null}
     </Stack>
