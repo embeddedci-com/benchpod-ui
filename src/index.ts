@@ -74,6 +74,7 @@ export {
   withDutDir,
   type Wiring,
   type WiringSignal,
+  type UartParity,
   type WiringDutDir,
   type WiringFieldIssue,
 } from './wiring/model'

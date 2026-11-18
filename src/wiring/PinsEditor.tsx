@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Box, Group, Paper, Select, SimpleGrid, Stack, Switch, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { ownerLabel, pinWarnings, type LaPin } from '../bus/PinStrip'
-import { LA_CHANNEL_COUNT, WIRING_ROLES, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
+import { LA_CHANNEL_COUNT, WIRING_ROLES, type UartParity, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
 import {
   assignPin,
   PIN_ROLE_OPTIONS,
@@ -30,6 +30,11 @@ export const PIN_KIND_COLORS: Record<PinKind, string> = { uart: 'blue', i2c: 'te
 const PIN_KIND_LABELS: Record<PinKind, string> = { uart: 'UART', i2c: 'I2C', swd: 'SWD', spi: 'SPI', signal: 'Signal' }
 const PULL_UP_COLOR = 'var(--mantine-color-red-6)'
 const PULL_DOWN_COLOR = 'var(--mantine-color-indigo-6)'
+const UART_PARITIES = [
+  { value: 'none', label: 'None' },
+  { value: 'even', label: 'Even' },
+  { value: 'odd', label: 'Odd' },
+]
 const BAUDS = ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600', '1000000']
 
 function PullDot({ dir, size = 7 }: { dir: 'up' | 'down'; size?: number }) {
@@ -312,6 +317,30 @@ export function PinsEditor({
               allowDeselect={false}
               searchable
               error={fieldErr('uart_baud')}
+              disabled={disabled}
+            />
+          ) : null}
+          {kind === 'uart' ? (
+            <Select
+              size="xs"
+              label="Parity"
+              data={UART_PARITIES}
+              value={wiring.uart_parity}
+              onChange={(v) => v && onChange({ uart_parity: v as UartParity })}
+              allowDeselect={false}
+              error={fieldErr('uart_parity')}
+              disabled={disabled}
+            />
+          ) : null}
+          {kind === 'uart' ? (
+            <Select
+              size="xs"
+              label="Stop bits"
+              data={['1', '2']}
+              value={String(wiring.uart_stop_bits)}
+              onChange={(v) => v && onChange({ uart_stop_bits: v === '2' ? 2 : 1 })}
+              allowDeselect={false}
+              error={fieldErr('uart_stop_bits')}
               disabled={disabled}
             />
           ) : null}
