@@ -342,7 +342,7 @@ export function CaptureView({
         </>
       ) : (
         <Text size="sm" c="dimmed">
-          {controls ? 'Pick what to capture and press Capture. The agent\'s captures show here too.' : 'No capture yet.'}
+          {controls ? 'No capture yet. The agent\'s captures show here too.' : 'No capture yet.'}
         </Text>
       )}
 

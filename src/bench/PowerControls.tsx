@@ -39,6 +39,7 @@ export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pol
   const [wiring, setWiring] = useState<WiringInfo | null>(null)
   const [profile, setProfile] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<{ efuse: number; why: string } | null>(null)
+  const [askRestart, setAskRestart] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [busy, setBusy] = useState<number | null>(null)
   const [history, setHistory] = useState<{ internal: number; external: number }[]>([])
@@ -85,7 +86,7 @@ export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pol
   const toggle = async (efuse: number, on: boolean, confirmed = false) => {
     // Ask only when something does not match, so the normal case stays one click.
     if (on && !confirmed && wiring?.efuse && wiring.efuse !== efuse && (!profile || profile === wiring.profile_name)) {
-      setConfirm({ efuse, why: `The wiring profile's rail is ${railName(wiring.efuse)}, not ${railName(efuse)}.` })
+      setConfirm({ efuse, why: `The pins profile's rail is ${railName(wiring.efuse)}, not ${railName(efuse)}.` })
       return
     }
     setConfirm(null)
@@ -102,6 +103,31 @@ export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pol
       setBusy(null)
     }
   }
+  // Restart the board: the rail that is on goes off, then on again with the chosen profile.
+  const restart = async () => {
+    setAskRestart(false)
+    const efuse = status?.internal.enabled ? 1 : 2
+    setBusy(efuse)
+    try {
+      // One yes (the Restart question above) covers both calls.
+      const off = await call('power_off', { efuse }, { approved: true })
+      const e = benchError(off)
+      if (e) {
+        setError(e)
+        return
+      }
+      await new Promise((r) => setTimeout(r, 500))
+      const args: Record<string, unknown> = { efuse }
+      if (profile && wiring?.profiles?.length) args.wiring_profile = profile
+      const r = await call('power_on', args, { approved: true })
+      const e2 = benchError(r)
+      if (e2) setError(e2)
+      await read()
+    } finally {
+      setBusy(null)
+    }
+  }
+  const anyOn = !!(status?.internal.enabled || status?.external.enabled)
   const profiles = wiring?.profiles ?? []
 
   return (
@@ -110,7 +136,7 @@ export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pol
         {profiles.length ? (
           <Select
             size="xs"
-            label="Power on with wiring"
+            label="Power on with pins profile"
             w={200}
             data={profiles.map((p) => ({ value: p.name, label: p.name === wiring?.default_profile ? `${p.name} (default)` : p.name }))}
             value={profile}
@@ -121,7 +147,7 @@ export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pol
         ) : null}
         <Text size="xs" c="dimmed" pb={4}>
           {wiring
-            ? `${wiring.profile_name ? `Wiring ${wiring.profile_name}: ` : ''}I/O ${wiring.la_voltage ? `${wiring.la_voltage} V` : 'not set'}, rail ${railName(wiring.efuse)}`
+            ? `${wiring.profile_name ? `Pins ${wiring.profile_name}: ` : ''}I/O ${wiring.la_voltage ? `${wiring.la_voltage} V` : 'not set'}, rail ${railName(wiring.efuse)}`
             : ''}
         </Text>
       </Group>
@@ -168,6 +194,28 @@ export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pol
           </Group>
         )
       })}
+      {anyOn ? (
+        <Group>
+          <Button size="compact-xs" variant="light" onClick={() => setAskRestart(true)} loading={busy !== null} data-testid="restart-board">
+            Restart board
+          </Button>
+        </Group>
+      ) : null}
+      {askRestart ? (
+        <Alert color="blue" variant="light" p="xs">
+          <Group gap="xs" justify="space-between" wrap="wrap">
+            <Text size="xs">Restart the board: power off and on again{profile ? ` with ${profile}` : ''}?</Text>
+            <Group gap={6}>
+              <Button size="compact-xs" onClick={() => void restart()} data-testid="restart-confirm">
+                Restart
+              </Button>
+              <Button size="compact-xs" variant="subtle" onClick={() => setAskRestart(false)}>
+                Cancel
+              </Button>
+            </Group>
+          </Group>
+        </Alert>
+      ) : null}
       {history.length > 1 ? <CurrentChart history={history} /> : null}
       {status?.pod?.monitor_ok ? (
         <Text size="xs" c="dimmed" ff="monospace">

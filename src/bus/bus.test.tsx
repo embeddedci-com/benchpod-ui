@@ -192,7 +192,7 @@ describe('I2cTab', () => {
     const { call } = fake({ la_pins: () => ok({ pins: [{ la: 1, function: 'none', pull_on: false }, { la: 2, function: 'none', pull_on: false }] }) })
     const r = wrap(<I2cTab call={call} />)
     r.rerender(<MantineProvider><I2cTab call={call} wiredSda={2} wiredScl={1} /></MantineProvider>)
-    await waitFor(() => expect(screen.getByTestId('i2c-pull-hint').textContent).toContain('are off on LA2 and LA1'))
+    await waitFor(() => expect(screen.getByTestId('i2c-pull-hint').textContent).toContain('Pull-ups off on LA2 and LA1'))
   })
 
   it('shows the session the log last opened when the pins cannot tell', async () => {

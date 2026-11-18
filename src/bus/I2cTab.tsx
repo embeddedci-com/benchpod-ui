@@ -281,7 +281,7 @@ export function I2cTab({
           <Text size="xs" c="dimmed" data-testid="i2c-pull-hint">
             {pullOn
               ? `The pod's pull-ups are on for ${pinNames}.`
-              : `The pod's pull-ups (LA1 to LA6, 3.3 V) are ${pullOn === false ? 'off' : 'needed'}${pinNames ? ` on ${pinNames}` : ''}. Switch them on before you open.`}
+              : `Pull-ups ${pullOn === false ? 'off' : 'needed'}${pinNames ? ` on ${pinNames}` : ''}: switch them on before you open.`}
           </Text>
           {pullOn ? null : (
             <Button size="compact-xs" variant="light" onClick={() => void pull(true)} loading={busy === 'pull'} disabled={!!busy || (!sda && !scl)}>

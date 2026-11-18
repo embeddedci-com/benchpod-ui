@@ -195,8 +195,7 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
         <Checkbox size="xs" label="Verify" checked={verify} onChange={(e) => setVerify(e.currentTarget.checked)} />
       </Group>
       <Text size="xs" c="dimmed">
-        SWD on {wiring?.profile?.swd_swclk ? `LA${wiring.profile.swd_swclk}` : 'SWCLK'} / {wiring?.profile?.swd_swdio ? `LA${wiring.profile.swd_swdio}` : 'SWDIO'} (from the wiring). OpenOCD runs on this
-        computer.
+        SWD on {wiring?.profile?.swd_swclk ? `LA${wiring.profile.swd_swclk}` : 'SWCLK'} / {wiring?.profile?.swd_swdio ? `LA${wiring.profile.swd_swdio}` : 'SWDIO'}, from the pins profile.
       </Text>
       <Group gap="xs">
         <Button size="xs" onClick={() => void flash()} loading={busy === 'flash'} disabled={!path || !!busy || (!target.trim() && !wiring?.swd_target)}>
