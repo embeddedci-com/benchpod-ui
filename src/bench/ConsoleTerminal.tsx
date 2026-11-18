@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActionIcon, Alert, Box, Button, Group, NumberInput, ScrollArea, SegmentedControl, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import { TerminalText } from '../results/ResultView'
 import { benchData, benchError, type BenchCall } from './benchCall'
+import { UartLineOptions, entryHex, loadUartLine, saveUartLine, uartLineArgs, type UartLine } from './UartLineOptions'
 
 // The board's console, typed into by hand: the web app's serial terminal for a host's bench panel.
 //
@@ -62,6 +63,12 @@ export function ConsoleTerminal({
   const [baud, setBaud] = useState<number | ''>('')
   // Data bits, parity and stop bits; null takes the pins profile's (8N1 unless it says otherwise).
   const [frame, setFrame] = useState<string | null>(null)
+  // One wire and boot entry (UartLineOptions), remembered on this computer.
+  const [uartLine, setUartLineState] = useState<UartLine>(loadUartLine)
+  const setUartLine = (v: UartLine) => {
+    setUartLineState(v)
+    saveUartLine(v)
+  }
   const [rx, setRx] = useState<string | null>(null)
   const [tx, setTx] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -160,6 +167,13 @@ export function ConsoleTerminal({
     if (baud) args.baud = baud
     if (rx) args.rx = Number(rx)
     if (tx) args.tx = Number(tx)
+    if (uartLine.entry && entryHex(uartLine.entry.hex) === null) {
+      setError('First bytes: whole hex bytes, at most 32 (e.g. 00 c5)')
+      return
+    }
+    Object.assign(args, uartLineArgs(uartLine))
+    // One wire: TX is the RX pin (the MCP defaults tx to rx with half_duplex).
+    if (uartLine.halfDuplex) delete args.tx
     if (frame) {
       args.parity = { E: 'even', O: 'odd' }[frame.charAt(1)] ?? 'none'
       args.stop_bits = frame.charAt(2) === '2' ? 2 : 1
@@ -189,7 +203,7 @@ export function ConsoleTerminal({
               Open UART
             </Button>
             <Select size="xs" w={78} placeholder="RX" aria-label="RX channel (the board's TX)" data={LA_CHANNELS} value={rx} onChange={setRx} clearable />
-            <Select size="xs" w={78} placeholder="TX" aria-label="TX channel (the board's RX)" data={LA_CHANNELS} value={tx} onChange={setTx} clearable />
+            <Select size="xs" w={78} placeholder="TX" aria-label="TX channel (the board's RX)" data={LA_CHANNELS} value={uartLine.halfDuplex ? null : tx} onChange={setTx} clearable disabled={uartLine.halfDuplex} />
             <NumberInput
               size="xs"
               w={90}
@@ -202,6 +216,7 @@ export function ConsoleTerminal({
               hideControls
             />
             <Select size="xs" w={84} placeholder="parity" aria-label="Parity and stop bits (blank: the pins profile's)" data={UART_FRAMES} value={frame} onChange={setFrame} clearable />
+            <UartLineOptions value={uartLine} onChange={setUartLine} />
           </Group>
         )}
         <Group gap={4} wrap="nowrap">
