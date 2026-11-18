@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { useEffect } from 'react'
-import { benchData, benchError, confirmLines, createConfirmStore, useBenchCall, type BenchResult } from './benchCall'
+import { benchData, benchError, confirmLines, createConfirmStore, useBenchCall, type BenchResult, describeCall } from './benchCall'
 
 beforeAll(() => {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as never
@@ -197,5 +197,15 @@ describe('ConsoleTerminal', () => {
     fireEvent.click(screen.getByText('Open UART'))
     await waitFor(() => expect(calls.length).toBe(2))
     expect(calls[1]).toEqual(['uart_open', { parity: 'even', stop_bits: 2 }])
+  })
+})
+
+describe('describeCall', () => {
+  it('says what a confirmed call does in one sentence, or leaves it to the arguments', () => {
+    expect(describeCall('set_pull', { las: [2, 1], enabled: true })).toBe('Switch on the pull resistors on LA2 and LA1?')
+    expect(describeCall('set_pull', { las: [2, 1], enabled: false })).toBe('Switch off the pull resistors on LA2 and LA1?')
+    expect(describeCall('i2c_open', { sda: 2, scl: 1, hz: 100000, pullups: 'pod' })).toBe('Open I2C on LA2 (SDA) and LA1 (SCL) at 100 kHz?')
+    expect(describeCall('gpio_write', { la: 5, value: 1 })).toBe('Drive LA5 high?')
+    expect(describeCall('flash', { file: 'x.elf' })).toBeNull()
   })
 })

@@ -181,7 +181,7 @@ export function BenchPanel({
             <Box p="sm">
               {outputs.console.length === 0 ? (
                 <Text size="sm" c="dimmed">
-                  The board&apos;s console appears here.
+                  What the agent reads from the board&apos;s console shows here. The live console is on the other tabs.
                 </Text>
               ) : (
                 <TerminalText
