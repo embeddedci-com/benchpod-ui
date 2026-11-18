@@ -18,6 +18,7 @@ import {
   type PinView,
   type SignalUse,
 } from './pins'
+import { HelpTip } from '../help/HelpTip'
 
 // The Pins editor: one wiring profile, pin by pin. The 14 LA pins in two rows, colored by what
 // they carry, with a dot for a pull resistor that is on; click a pin to set what it is used for,
@@ -358,11 +359,17 @@ export function PinsEditor({
                 </Group>
               }
               description={
-                low
-                  ? 'The pull resistors work at 3.3 V only: at 1.8 V it stays off.'
-                  : wiring.pulls === null
-                    ? 'This profile leaves the pull resistors as they are. Switch one on or off to have power-on set them all.'
-                    : 'Switched on or off when the board powers on with this profile.'
+                low ? (
+                  'Off at 1.8 V I/O.'
+                ) : (
+                  <>
+                    {wiring.pulls === null ? 'Not set by this profile.' : 'Set when the board powers on.'}{' '}
+                    <HelpTip label="pull resistors" docs="/docs/benchpod-pinout">
+                      Powering the board on with this profile switches the pull resistors it lists on and the others off. A
+                      profile that lists none leaves them as they are. They work at 3.3 V I/O only.
+                    </HelpTip>
+                  </>
+                )
               }
               checked={p.pullOn}
               onChange={(e) => onChange(setPinPull(wiring, p.la, e.currentTarget.checked))}

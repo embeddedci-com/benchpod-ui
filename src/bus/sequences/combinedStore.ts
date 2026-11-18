@@ -18,7 +18,7 @@ export function combinedSequenceStore(local: SequenceStore, account: SequenceSto
     canShare: !!account,
     where: account
       ? 'Saved on this computer; shared ones are kept in your embeddedci.com account.'
-      : 'Saved on this computer. Sign in to embeddedci.com (an EmbeddedCI API key) to share one in your organization.',
+      : 'Saved on this computer; sign in to share them with your organization.',
     list: async () => {
       const [mine, theirs] = await Promise.all([local.list(), account ? account.list().catch(() => []) : Promise.resolve([])])
       return [...mine.map((s) => tag(LOCAL, { ...s, mine: true, shared: false })), ...theirs.map((s) => tag(ACCOUNT, s))]

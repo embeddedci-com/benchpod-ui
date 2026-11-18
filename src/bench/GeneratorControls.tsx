@@ -259,8 +259,7 @@ function Library({
         </FileButton>
       </Group>
       <Text size="xs" c="dimmed">
-        Waveforms stay on this computer. Play loops one out of the output above until Stop
-        {fit ? ', scaled to fill the output' : ', at the values it was recorded with'}.{' '}
+        Play loops one until Stop, {fit ? 'scaled to the output' : 'as recorded'}.{' '}
         <Text span size="xs" c="blue" style={{ cursor: 'pointer' }} onClick={() => setFit(!fit)}>
           {fit ? 'Play as recorded' : 'Scale to the output'}
         </Text>
