@@ -156,6 +156,8 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
   }
   const targetChanged = !!wiring && (target.trim() !== (wiring.swd_target ?? '') || nreset !== !!wiring.swd_nreset)
 
+  // The SWD pins come from the pins profile only: without them there is nothing to flash through.
+  const swdSet = !!(wiring?.profile?.swd_swclk && wiring?.profile?.swd_swdio)
   return (
     <Stack gap="sm" p="sm">
       <Group gap="xs" align="flex-end">
@@ -194,16 +196,22 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
         <Checkbox size="xs" label="Power the board first" checked={powerFirst} onChange={(e) => setPowerFirst(e.currentTarget.checked)} />
         <Checkbox size="xs" label="Verify" checked={verify} onChange={(e) => setVerify(e.currentTarget.checked)} />
       </Group>
-      <Text size="xs" c="dimmed">
-        SWD on {wiring?.profile?.swd_swclk ? `LA${wiring.profile.swd_swclk}` : 'SWCLK'} / {wiring?.profile?.swd_swdio ? `LA${wiring.profile.swd_swdio}` : 'SWDIO'}, from the pins profile.
-      </Text>
+      {swdSet ? (
+        <Text size="xs" c="dimmed">
+          SWD on LA{String(wiring?.profile?.swd_swclk)} / LA{String(wiring?.profile?.swd_swdio)}, from the pins profile.
+        </Text>
+      ) : wiring ? (
+        <Alert color="yellow" variant="light" p="xs" data-testid="flash-no-swd">
+          <Text size="xs">Set SWCLK and SWDIO in the Pins tab before flashing: the pins profile has no SWD pins.</Text>
+        </Alert>
+      ) : null}
       <Group gap="xs">
-        <Button size="xs" onClick={() => void flash()} loading={busy === 'flash'} disabled={!path || !!busy || (!target.trim() && !wiring?.swd_target)}>
+        <Button size="xs" onClick={() => void flash()} loading={busy === 'flash'} disabled={!path || !!busy || !swdSet || (!target.trim() && !wiring?.swd_target)}>
           Flash
         </Button>
         {targetChanged && result?.ok ? (
           <Button size="xs" variant="light" onClick={() => void keepTarget()} disabled={!!busy}>
-            Keep this target in the wiring
+            Keep this target in the pins profile
           </Button>
         ) : null}
       </Group>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { WiringDiagram, changedChannels } from './WiringDiagram'
 import { WiringProfilePicker } from './WiringProfilePicker'
@@ -48,6 +48,28 @@ describe('WiringProfilePicker', () => {
       />,
     )
     expect(screen.getByText('Make active')).toBeTruthy()
-    expect(screen.getByLabelText('More profile actions')).toBeTruthy()
+  })
+
+  it('deletes the profile on screen from the ⋯ menu; the active one is greyed out and says why', async () => {
+    const onDelete = vi.fn()
+    const profiles = [
+      { name: 'k66', rev: 3, isDefault: true },
+      { name: 'nrf', rev: 1, isDefault: false },
+    ]
+    const { rerender } = wrap(
+      <WiringProfilePicker profiles={profiles} selected="nrf" onSelect={() => {}} onMakeDefault={() => {}} onDelete={onDelete} />,
+    )
+    fireEvent.click(screen.getByLabelText('More profile actions'))
+    fireEvent.click(await screen.findByTestId('delete-profile'))
+    expect(onDelete).toHaveBeenCalledWith('nrf')
+    rerender(
+      <MantineProvider>
+        <WiringProfilePicker profiles={profiles} selected="k66" onSelect={() => {}} onMakeDefault={() => {}} onDelete={onDelete} />
+      </MantineProvider>,
+    )
+    fireEvent.click(screen.getByLabelText('More profile actions'))
+    const item = await screen.findByTestId('delete-profile')
+    expect(item.hasAttribute('disabled') || item.getAttribute('data-disabled') === 'true').toBe(true)
+    expect(screen.getByText(/The active profile can't be deleted/)).toBeTruthy()
   })
 })
