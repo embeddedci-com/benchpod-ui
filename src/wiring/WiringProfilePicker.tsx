@@ -3,7 +3,7 @@ import { ActionIcon, Badge, Button, Group, Menu, Select, Stack, Text, TextInput,
 
 // The wiring profiles stored on the pod, in one row: pick the one to look at and edit, see which
 // is active (the pod's default: powering the board on uses it, and so does every tool that names
-// no profile), make another one active, start a new one. Delete and the host's extras (copy as
+// no profile), make another one active, start a new one, delete one. The host's extras (copy as
 // JSON, the diagram) sit in the ⋯ menu. The host supplies the list and does the calls (the web app
 // through embeddedci.com, the desktop app through the MCP tools).
 
@@ -102,21 +102,33 @@ export function WiringProfilePicker({
             New
           </Button>
         ) : null}
-        {canDelete || menu ? (
+        {current && onDelete ? (
+          <Tooltip
+            label={current.isDefault ? 'The active profile can\'t be deleted: make another one active first' : `Delete ${current.name} from the pod`}
+            withArrow
+            multiline
+            w={220}
+          >
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              color="red"
+              disabled={busy || readOnly || !canDelete}
+              onClick={() => onDelete(current.name)}
+              data-testid="delete-profile"
+            >
+              Delete
+            </Button>
+          </Tooltip>
+        ) : null}
+        {menu ? (
           <Menu position="bottom-end" withinPortal>
             <Menu.Target>
               <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More profile actions">
                 ⋯
               </ActionIcon>
             </Menu.Target>
-            <Menu.Dropdown>
-              {menu}
-              {canDelete && current ? (
-                <Menu.Item color="red" disabled={busy || readOnly} onClick={() => onDelete?.(current.name)}>
-                  Delete {current.name}
-                </Menu.Item>
-              ) : null}
-            </Menu.Dropdown>
+            <Menu.Dropdown>{menu}</Menu.Dropdown>
           </Menu>
         ) : null}
       </Group>

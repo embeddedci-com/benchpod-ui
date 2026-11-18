@@ -110,6 +110,10 @@ export function describeCall(tool: string, a: Record<string, unknown>): string |
       return `Send a CAN frame${a.id != null ? ` with id ${addr(a.id)}` : ''}?`
     case 'uart_write':
       return "Send this to the board's UART?"
+    case 'delete_wiring':
+      return `Delete the pins profile ${String(a.name ?? '')} from the pod?`
+    case 'set_default_wiring':
+      return `Make ${String(a.name ?? '')} the active pins profile?`
     case 'power_on':
       return 'Turn on target power?'
     case 'power_off':
