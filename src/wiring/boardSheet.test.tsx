@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
 import { BoardView } from './BoardView'
-import { boardHeaderFromStatus, boardSheet, boardSvg, sheetRows } from './boardSheet'
+import { boardHeaderFromStatus, boardSheet, boardSvg, detectBoardHeader, sheetRows } from './boardSheet'
 import { effectiveWiring } from './model'
 
 beforeAll(() => {
@@ -67,6 +67,20 @@ describe('boardSheet', () => {
     expect(boardHeaderFromStatus({ data: { board_rev: 'v3', module: { present: true } } })).toBe('front')
     expect(boardHeaderFromStatus({})).toBeNull()
     expect(boardHeaderFromStatus(null)).toBeNull()
+  })
+})
+
+describe('detectBoardHeader', () => {
+  it('asks the module command first, then the status', async () => {
+    expect(await detectBoardHeader(async () => ({ status: 'ok', data: { present: true } }))).toBe('front')
+    expect(await detectBoardHeader(async () => ({ status: 'error', error: 'module: this BenchPod has no module link (digital v3r3 only)' }))).toBe('j1')
+    const old = async (c: Record<string, unknown>) =>
+      c.cmd === 'module' ? { status: 'error', error: 'unknown command' } : { status: 'ok', data: { board_rev: 'v3r2' } }
+    expect(await detectBoardHeader(old)).toBe('j1')
+    const unsure = async (c: Record<string, unknown>) =>
+      c.cmd === 'module' ? { status: 'error', error: 'unknown command' } : { status: 'ok', data: { board_rev: 'v3', short_form: true } }
+    expect(await detectBoardHeader(unsure)).toBeNull()
+    expect(await detectBoardHeader(async () => { throw new Error('module: this BenchPod has no module link') })).toBe('j1')
   })
 })
 

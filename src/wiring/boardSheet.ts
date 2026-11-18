@@ -62,6 +62,31 @@ export function boardHeaderFromStatus(status: Record<string, unknown> | null | u
   return null
 }
 
+/** A pod reply as the hosts get it: {status: 'ok', data} or {status: 'error', error}. */
+export type PodReply = { status?: string; data?: unknown; error?: string; message?: string } | null | undefined
+
+/**
+ * The pod's header, asked the pod: the read-only `module` command answers on digital v3r3 and
+ * later (front connector) and refuses with "no module link" on the one-piece boards (J1); it works
+ * over the cloud too. Firmware without the command falls back to the status
+ * (boardHeaderFromStatus). null when neither says: the user picks.
+ */
+export async function detectBoardHeader(run: (cmd: Record<string, unknown>) => Promise<PodReply>): Promise<BoardHeader | null> {
+  try {
+    const r = await run({ cmd: 'module' })
+    if (r?.status === 'ok') return 'front'
+    if (/no module link/i.test(`${r?.error ?? ''} ${r?.message ?? ''}`)) return 'j1'
+  } catch (e) {
+    if (/no module link/i.test(String((e as Error)?.message ?? e))) return 'j1'
+  }
+  try {
+    const r = await run({ cmd: 'status' })
+    return r?.status === 'ok' || r?.status === undefined ? boardHeaderFromStatus((r?.data ?? r) as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
 // Fixed colors (Mantine's 6 shades), the same hues as the Pins editor's tiles.
 export const KIND_HEX: Record<PinKind, string> = {
   uart: '#228be6',

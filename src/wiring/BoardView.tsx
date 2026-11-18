@@ -156,7 +156,7 @@ export function BoardViewModal({
   storageKey?: string
 }) {
   return (
-    <Modal opened={opened} onClose={onClose} title={`${title}: wiring`} size="xl" centered>
+    <Modal opened={opened} onClose={onClose} title={title === 'wiring' ? 'Wiring' : `Wiring: ${title}`} size="xl" centered>
       {opened ? <BoardView wiring={wiring} title={title} header={header} storageKey={storageKey} /> : null}
     </Modal>
   )
