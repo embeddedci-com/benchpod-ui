@@ -102,33 +102,34 @@ export function WiringProfilePicker({
             New
           </Button>
         ) : null}
-        {current && onDelete ? (
-          <Tooltip
-            label={current.isDefault ? 'The active profile can\'t be deleted: make another one active first' : `Delete ${current.name} from the pod`}
-            withArrow
-            multiline
-            w={220}
-          >
-            <Button
-              size="compact-xs"
-              variant="subtle"
-              color="red"
-              disabled={busy || readOnly || !canDelete}
-              onClick={() => onDelete(current.name)}
-              data-testid="delete-profile"
-            >
-              Delete
-            </Button>
-          </Tooltip>
-        ) : null}
-        {menu ? (
+        {menu || (current && onDelete) ? (
           <Menu position="bottom-end" withinPortal>
             <Menu.Target>
               <ActionIcon size="sm" variant="subtle" color="gray" aria-label="More profile actions">
                 ⋯
               </ActionIcon>
             </Menu.Target>
-            <Menu.Dropdown>{menu}</Menu.Dropdown>
+            <Menu.Dropdown>
+              {menu}
+              {current && onDelete ? (
+                <>
+                  {menu ? <Menu.Divider /> : null}
+                  <Menu.Item
+                    color="red"
+                    disabled={busy || readOnly || !canDelete}
+                    onClick={() => onDelete(current.name)}
+                    data-testid="delete-profile"
+                  >
+                    Delete {current.name}
+                  </Menu.Item>
+                  {current.isDefault ? (
+                    <Text size="xs" c="dimmed" px="sm" pb={6} maw={220}>
+                      The active profile can&apos;t be deleted: make another one active first.
+                    </Text>
+                  ) : null}
+                </>
+              ) : null}
+            </Menu.Dropdown>
           </Menu>
         ) : null}
       </Group>
