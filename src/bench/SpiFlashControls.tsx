@@ -3,6 +3,7 @@ import { Alert, Badge, Button, Checkbox, Divider, FileButton, Group, NumberInput
 import { TerminalText } from '../results/ResultView'
 import { benchData, benchError, type BenchCall } from './benchCall'
 import type { FirmwareFile, FirmwareStore } from './FlashControls'
+import { HelpTip } from '../help/HelpTip'
 
 // An SPI NOR flash chip (a 25-series part) on four LA pins, by hand: the web app's SPI flash panel
 // for a host's bench panel. The pins come from the wiring (spi_sclk/mosi/miso/cs). Program writes
@@ -130,8 +131,11 @@ export function SpiFlashControls({ call, images, dumpDir }: { call: BenchCall; i
   return (
     <Stack gap="sm" p="sm">
       <Text size="xs" c="dimmed">
-        A 25-series SPI NOR flash on the SPI pins of the wiring (SCLK, MOSI, MISO, CS). Hold the board in reset so its own controller
-        stays off the bus.
+        A 25-series SPI flash on the profile&apos;s SPI pins. Hold the board in reset.{' '}
+        <HelpTip label="SPI flash" docs="/docs/benchpod-cli">
+          SCLK, MOSI, MISO and CS come from the active pins profile. Reset keeps the board&apos;s own controller off the
+          bus.
+        </HelpTip>
       </Text>
       <Group gap="xs" align="flex-end">
         <Select size="xs" w={100} label="SCK rate" data={RATES} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} />

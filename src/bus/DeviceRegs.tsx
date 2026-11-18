@@ -3,6 +3,7 @@ import { Alert, Button, Group, ScrollArea, Select, Stack, Table, Text, TextInput
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { hex2, nackWhere, spacedHex } from './busLog'
 import { decodeValue, encodeValue, i2cRegHex, parseDevice, spiReadHex, spiReadValue, spiWriteHex, type DeviceDef, type DeviceReg } from './device'
+import { HelpTip } from '../help/HelpTip'
 
 // Device mode in the I2C and SPI tabs: pick a sensor definition from the library (sensor_library,
 // sensor_show) and read and write the real chip's registers by name. The pod is the master; the
@@ -179,8 +180,8 @@ export function DeviceRegs({
         ) : null}
       </Group>
       <Text size="xs" c="dimmed">
-        The pod is the master and your chip the target. {bus === 'i2c' ? 'Open the I2C session first.' : 'The definition sets the SPI mode above.'} Values are decoded by
-        the register&apos;s type.
+        {bus === 'i2c' ? 'Open the I2C session first.' : 'The definition sets the SPI mode above.'}{' '}
+        <HelpTip label="registers">The pod is the master and your chip the target. Values are decoded by the register&apos;s type.</HelpTip>
       </Text>
       {def ? (
         <ScrollArea.Autosize mah={300}>

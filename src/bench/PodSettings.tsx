@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Alert, Button, Divider, Group, PasswordInput, SegmentedControl, Stack, Switch, Table, Text, TextInput } from '@mantine/core'
 import { TerminalText } from '../results/ResultView'
 import { benchData, benchError, type BenchCall, type BenchResult } from './benchCall'
+import { HelpTip } from '../help/HelpTip'
 
 // The pod's own settings, the web app's Settings tab for a host's bench panel: an overview, its
 // network (Wi-Fi, LAN access, HTTPS-only, the USB network adapter), the signature policy, and
@@ -118,7 +119,10 @@ export function PodSettings({ call, podCall, offline }: { call: BenchCall; podCa
 
       <Divider label="Wi-Fi" labelPosition="left" />
       <Text size="xs" c="dimmed">
-        Over the pod's USB console. Joining Wi-Fi turns its USB network adapter off: the app then reaches it over Wi-Fi or the console.
+        Over the pod&apos;s USB console.{' '}
+        <HelpTip label="Wi-Fi" docs="/docs/benchpod-getting-started#4-get-the-pod-online">
+          Joining Wi-Fi turns the pod&apos;s USB network adapter off: the app then reaches it over Wi-Fi or the console.
+        </HelpTip>
       </Text>
       <Group gap="xs">
         <Button size="xs" variant="light" onClick={() => void run('Network', () => podCall('show-network'), true, false)} loading={busy === 'Network'} disabled={!!busy}>
@@ -188,8 +192,11 @@ export function PodSettings({ call, podCall, offline }: { call: BenchCall; podCa
         />
       </Group>
       <Text size="xs" c="dimmed">
-        Locked: read and instrument control on the LAN, settings and firmware only over USB. Off: the pod stops listening on the LAN. The USB
-        link always works. Turning the USB network adapter off leaves the USB console only (no captures over USB).
+        The USB link always works.{' '}
+        <HelpTip label="network access" docs="/docs/benchpod-security">
+          Locked: read and instrument control on the LAN, settings and firmware only over USB. Off: the pod stops
+          listening on the LAN. With the USB network adapter off, only the USB console is left (no captures over USB).
+        </HelpTip>
       </Text>
 
       <Divider label="Firmware signatures" labelPosition="left" />
@@ -206,7 +213,11 @@ export function PodSettings({ call, podCall, offline }: { call: BenchCall; podCa
         ]}
       />
       <Text size="xs" c="dimmed">
-        Audit accepts every image and reports its signature; permissive refuses a bad signature; required refuses unsigned images too.
+        Which firmware images the pod accepts{' '}
+        <HelpTip label="signature policy" docs="/docs/benchpod-firmware-update">
+          Audit accepts every image and reports its signature; Permissive refuses a bad signature; Required refuses
+          unsigned images too.
+        </HelpTip>
       </Text>
 
       {!offline ? (
@@ -218,8 +229,11 @@ export function PodSettings({ call, podCall, offline }: { call: BenchCall; podCa
             </Button>
           </Group>
           <Text size="xs" c="dimmed">
-            Removes the pod from your embeddedci.com account (its data stays there) and stops it connecting. Needs `benchpod login` on this
-            computer. The app keeps working with the pod over USB and your network.
+            The app keeps working with the pod locally.{' '}
+            <HelpTip label="deregister">
+              Removes the pod from your embeddedci.com account (its data stays there) and stops it connecting. Needs
+              benchpod login on this computer.
+            </HelpTip>
           </Text>
         </>
       ) : null}

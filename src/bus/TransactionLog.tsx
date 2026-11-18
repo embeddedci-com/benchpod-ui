@@ -85,7 +85,7 @@ export function TransactionLog({
       </Group>
       {rows.length === 0 ? (
         <Text size="xs" c="dimmed">
-          Every call from these tabs shows here: what went out, what came back, ACK or NACK.
+          Calls from these tabs show here.
         </Text>
       ) : stacked ? (
         <ScrollArea.Autosize mah={maxHeight}>

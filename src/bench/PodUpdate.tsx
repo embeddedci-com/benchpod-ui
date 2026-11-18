@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Badge, Button, FileButton, Group, Stack, Text } from '@mantine/core'
 import { TerminalText } from '../results/ResultView'
+import { HelpTip } from '../help/HelpTip'
 
 // Update the pod's own firmware: the latest release, a chosen one, or release files picked from
 // this computer (no internet). The host runs the update (the desktop app: the benchpod CLI's
@@ -137,8 +138,11 @@ export function PodUpdate({ updater, connected }: { updater: PodUpdater; connect
       ) : null}
 
       <Text size="xs" c="dimmed">
-        {info?.offline ? 'Offline: ' : 'Without internet: '}download the release files from github.com/embeddedci-com/benchpod-firmware on another computer ({IMAGE},
-        its .sig, blobs-manifest.json and the blob-*.bin files with their .sig), then add them here.
+        {info?.offline ? 'Offline' : 'Without internet'}: add the release files here.{' '}
+        <HelpTip label="offline update" docs="/docs/benchpod-firmware-update">
+          Download them from github.com/embeddedci-com/benchpod-firmware on another computer: {IMAGE}, its .sig,
+          blobs-manifest.json and the blob-*.bin files with their .sig.
+        </HelpTip>
       </Text>
       <Group gap="xs">
         <FileButton multiple onChange={(f) => void addFiles(f)} accept=".bin,.sig,.json">
@@ -172,7 +176,7 @@ export function PodUpdate({ updater, connected }: { updater: PodUpdater; connect
           <Stack gap="xs">
             <Text size="sm">{ask.label}.</Text>
             <Text size="xs" c="dimmed">
-              The pod restarts into it, then gets its gateware and Wi-Fi bridge images. It takes a minute or two. Keep it plugged in until it says done.
+              It takes a minute or two: keep the pod plugged in until it says done.
             </Text>
             <Group gap="xs">
               <Button size="xs" onClick={() => void run()}>

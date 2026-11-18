@@ -6,6 +6,7 @@ import { fmtSi, spacedHex } from './busLog'
 import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
 import type { SendAgainRequest } from './sendAgain'
 import { DeviceRegs, type SpiTransfer } from './DeviceRegs'
+import { HelpTip } from '../help/HelpTip'
 
 // The pod as SPI master on four LA pins: pins, mode, rate, then one full-duplex transfer per
 // Send (CS low for all the bytes). The tool is spi_transfer; it arms the SPI master for the call
@@ -164,7 +165,10 @@ export function SpiTab({
         <Select size="xs" w={96} label="Rate" aria-label="Rate" data={RATES} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} comboboxProps={{ withinPortal: true }} />
       </Group>
       <Text size="xs" c="dimmed">
-        CS goes low for all the bytes of one send. The pod rounds the rate down to one it can run. Modes 1 and 2 need gateware v55 or later.
+        CS stays low for one send.{' '}
+        <HelpTip label="SPI" docs="/docs/benchpod-workspace#drive">
+          The pod rounds the rate down to one it can run. Modes 1 and 2 need gateware v55 or later.
+        </HelpTip>
       </Text>
 
       <Group gap="xs" wrap="nowrap">
@@ -201,7 +205,7 @@ export function SpiTab({
             ) : null}
           </Group>
           <Text size="xs" c="dimmed">
-            SPI clocks a byte in for every byte out: send 00 for each byte you want to read.
+            Send 00 for each byte to read.
             {sendCapture && !onWiring ? ' Capture it needs the wiring\'s SPI pins (SCK and CS at least).' : ''}
             {capturing ? ' Capture it: the trace starts just before CS falls and decodes the bytes.' : ''}
           </Text>

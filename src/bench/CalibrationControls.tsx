@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Checkbox, Divider, Group, NumberInput, SegmentedControl, Stack, Table, Text } from '@mantine/core'
 import { benchData, benchError, type BenchCall, type BenchResult } from './benchCall'
+import { HelpTip } from '../help/HelpTip'
 
 // The pod's calibration, the web app's Calibration section for a host's bench panel: what is
 // stored, the ADC offset (nothing on J8), each DAC output's line from two DMM readings, and the ADC
@@ -174,8 +175,11 @@ export function CalibrationControls({ call }: { call: BenchCall }) {
 
       <Divider label="DAC outputs, with a DMM" labelPosition="left" />
       <Text size="xs" c="dimmed">
-        Connect a DMM to the output, then let the pod drive two set points and type what the DMM reads. The pod stores its own line for that
-        output; the ADC gains below are measured against it.
+        Connect a DMM to the output and type what it reads at each point.{' '}
+        <HelpTip label="DMM calibration" docs="/docs/benchpod-workspace#calibration">
+          The pod drives two set points and stores its own line for that output; the ADC gains below are measured
+          against it.
+        </HelpTip>
       </Text>
       <Group gap="xs" align="flex-end">
         <SegmentedControl size="xs" data={PATHS} value={path} onChange={(v) => step === 0 && setPath(v)} disabled={step !== 0} />
@@ -225,7 +229,8 @@ export function CalibrationControls({ call }: { call: BenchCall }) {
       </Group>
       {source === 'ext' ? <Checkbox size="xs" label="An SMA cable connects the ±12 V output to the ADC input" checked={cable} onChange={(e) => setCable(e.currentTarget.checked)} /> : null}
       <Text size="xs" c="dimmed">
-        Uses the pod's own {needsLine} output, which needs its DMM line first. The pod drives two points and switches the outputs off after.
+        Needs the {needsLine} output&apos;s DMM line first.{' '}
+        <HelpTip label="ADC gain">The pod drives two points on that output and switches the outputs off after.</HelpTip>
       </Text>
 
       <Group gap="xs">
