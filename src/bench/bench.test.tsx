@@ -242,7 +242,9 @@ describe('ConsoleTerminal one wire and boot entry', () => {
 
 describe('describeCall', () => {
   it('says what a confirmed call does in one sentence, or leaves it to the arguments', () => {
-    expect(describeCall('set_pull', { las: [2, 1], enabled: true })).toBe('Switch on the pull resistors on LA2 and LA1?')
+    expect(describeCall('set_pull', { las: [2, 1], enabled: true })).toBe('Pull LA2 and LA1 up?')
+    expect(describeCall('set_pull', { las: [7], pull: 'down', enabled: true })).toBe('Pull LA7 down?')
+    expect(describeCall('set_pull', { las: [7], pull: 'off', enabled: false })).toBe('Switch off the pull resistors on LA7?')
     expect(describeCall('set_pull', { las: [2, 1], enabled: false })).toBe('Switch off the pull resistors on LA2 and LA1?')
     expect(describeCall('i2c_open', { sda: 2, scl: 1, hz: 100000, pullups: 'pod' })).toBe('Open I2C on LA2 (SDA) and LA1 (SCL) at 100 kHz?')
     expect(describeCall('gpio_write', { la: 5, value: 1 })).toBe('Drive LA5 high?')

@@ -95,7 +95,7 @@ function outText(tool: string, a: Record<string, unknown>): string {
     case 'i2c_scan':
       return `scan ${hex2(Number(a.start ?? 0x08))}..${hex2(Number(a.end ?? 0x77))}`
     case 'set_pull':
-      return `pull-ups ${a.enabled ? 'on' : 'off'} ${pins(a.las)}`
+      return a.pull === 'down' ? `pull-downs on ${pins(a.las)}` : `pull-ups ${a.pull ? (a.pull === 'off' ? 'off' : 'on') : a.enabled ? 'on' : 'off'} ${pins(a.las)}`
     case 'gpio_mode':
       return `${pins(a.la)} ${a.mode ?? 'output'}${a.level !== undefined ? ` at ${a.level}` : ''}`
     case 'gpio_write':

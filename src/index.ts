@@ -47,7 +47,7 @@ export { CanTab, parseCanId, canDataOk } from './bus/CanTab'
 export { TransactionLog } from './bus/TransactionLog'
 export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
 export { PinsEditor, PIN_KIND_COLORS } from './wiring/PinsEditor'
-export { pinViews, assignPin, updateSignal, setPinPull, pullSwitchLabel, signalUse, nextSignalName, type PinView, type PinKind, type SignalUse } from './wiring/pins'
+export { pinViews, assignPin, updateSignal, setPinPull, pinPullDirs, pullSwitchLabel, signalUse, nextSignalName, type PinView, type PinKind, type SignalUse } from './wiring/pins'
 export { WiringDiagram, changedChannels } from './wiring/WiringDiagram'
 export { BoardView, BoardViewModal } from './wiring/BoardView'
 export { boardSheet, boardSvg, boardSheetHtml, sheetRows, boardHeaderFromStatus, detectBoardHeader, type PodReply, BOARD_HEADER_LABELS, HEADER_PINS, type BoardHeader, type HeaderPin, type HeaderPinKind, type BoardSheet, type SheetPin, type SheetRow } from './wiring/boardSheet'
@@ -59,6 +59,10 @@ export {
   wiringFieldErrors,
   wiringProfileJson,
   PULL_CHANNELS,
+  LA_PULLS,
+  pullDirections,
+  canonicalPulls,
+  pullSupports,
   laChannelMap,
   laChannelLabel,
   WIRING_DEFAULTS,
@@ -79,6 +83,9 @@ export {
   type UartParity,
   type WiringDutDir,
   type WiringFieldIssue,
+  type PullDir,
+  type WiringPulls,
+  type LaPull,
 } from './wiring/model'
 // Sensors: import from '@bpui/sensors'; the root re-exports them as a namespace (several names, e.g.
 // FaultSpec and SegmentShape, are also generator types).

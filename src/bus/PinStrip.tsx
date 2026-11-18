@@ -13,7 +13,10 @@ export type LaPin = {
   function: string
   gpio?: string | null
   level?: number | null
+  /** The way the pull resistor pulls when on: up or down; null without one. */
   pull?: string | null
+  /** Every direction it can pull (firmware with la_pull_dir, embeddedci 3.0.3+); older: only `pull`. */
+  pull_dirs?: string[] | null
   pull_ohms?: string | null
   pull_on?: boolean
   in_use?: boolean

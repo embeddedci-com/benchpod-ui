@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Group, Paper, Select, SimpleGrid, Stack, Switch, Text, TextInput, UnstyledButton } from '@mantine/core'
+import { Alert, Box, Group, Paper, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { ownerLabel, pinWarnings, type LaPin } from '../bus/PinStrip'
 import { LA_CHANNEL_COUNT, WIRING_ROLES, type UartParity, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
 import {
   assignPin,
   PIN_ROLE_OPTIONS,
+  pinPullDirs,
   pinUseChoice,
   pinViews,
   pullSwitchLabel,
@@ -60,7 +61,7 @@ function PinTile({ p, selected, error, warned, onClick }: { p: PinView; selected
       onClick={onClick}
       aria-pressed={selected}
       data-testid={`pin-tile-${p.la}`}
-      aria-label={`LA${p.la}: ${p.short}${p.pullOn && p.pull.dir ? `, pull-${p.pull.dir} on` : ''}${warned ? ', warning' : ''}`}
+      aria-label={`LA${p.la}: ${p.short}${p.pullDir ? `, pull-${p.pullDir} on` : ''}${warned ? ', warning' : ''}`}
       style={{
         position: 'relative',
         minWidth: 0,
@@ -80,9 +81,9 @@ function PinTile({ p, selected, error, warned, onClick }: { p: PinView; selected
           !
         </Text>
       ) : null}
-      {p.pullOn && p.pull.dir ? (
+      {p.pullDir ? (
         <Box style={{ position: 'absolute', top: 3, right: 4, lineHeight: 0 }}>
-          <PullDot dir={p.pull.dir} />
+          <PullDot dir={p.pullDir} />
         </Box>
       ) : null}
       <Text fw={600} ff="monospace" style={{ fontSize: 11, lineHeight: '15px' }}>
@@ -148,7 +149,9 @@ export function PinsEditor({
   const sig = user?.kind === 'signal' ? user : null
   const role = user?.kind === 'role' ? user.role : null
   const kind = role ? roleKind(role) : null
-  const pullLabel = pullSwitchLabel(p.pull)
+  // The directions this pin can pull: the pod's answer when connected, else today's table.
+  const pullDirs = pinPullDirs(p.pull, liveOf(p.la))
+  const pullLabel = pullSwitchLabel(p.pull, pullDirs)
   const low = wiring.la_mv === 1800
 
   return (
@@ -378,33 +381,50 @@ export function PinsEditor({
             </>
           ) : null}
 
-          {pullLabel && p.pull.dir ? (
-            <Switch
-              size="xs"
-              label={
-                <Group gap={6} wrap="nowrap">
-                  <span>{pullLabel}</span>
-                  <PullDot dir={p.pull.dir} />
+          {pullLabel ? (
+            <Stack gap={4}>
+              {pullDirs.length > 1 ? (
+                <Group gap="xs" wrap="nowrap">
+                  <Text size="xs">Pull resistor{p.pull.ohms ? ` (${p.pull.ohms})` : ''}</Text>
+                  <SegmentedControl
+                    size="xs"
+                    aria-label={`LA${p.la} pull`}
+                    data={[{ value: 'off', label: 'Off' }, ...pullDirs.map((d) => ({ value: d, label: d === 'up' ? 'Up' : 'Down' }))]}
+                    value={p.pullDir ?? 'off'}
+                    onChange={(v) => onChange(setPinPull(wiring, p.la, v === 'up' || v === 'down' ? v : null))}
+                    disabled={disabled}
+                  />
                 </Group>
-              }
-              description={
-                low ? (
+              ) : (
+                <Switch
+                  size="xs"
+                  label={
+                    <Group gap={6} wrap="nowrap">
+                      <span>{pullLabel}</span>
+                      <PullDot dir={pullDirs[0]} />
+                    </Group>
+                  }
+                  checked={p.pullDir === pullDirs[0]}
+                  onChange={(e) => onChange(setPinPull(wiring, p.la, e.currentTarget.checked ? pullDirs[0] : null))}
+                  error={fieldErr('pulls')}
+                  disabled={disabled}
+                />
+              )}
+              <Text size="xs" c="dimmed">
+                {low ? (
                   'Off at 1.8 V I/O.'
                 ) : (
                   <>
                     {wiring.pulls === null ? 'Not set by this profile.' : 'Set when the board powers on.'}{' '}
                     <HelpTip label="pull resistors" docs="/docs/benchpod-pinout">
-                      Powering the board on with this profile switches the pull resistors it lists on and the others off. A
-                      profile that lists none leaves them as they are. They work at 3.3 V I/O only.
+                      Powering the board on with this profile pulls the pins it lists up or down and switches the other pull
+                      resistors off. The pod picks the resistor. A profile that lists none leaves them as they are. They work at
+                      3.3 V I/O only.
                     </HelpTip>
                   </>
-                )
-              }
-              checked={p.pullOn}
-              onChange={(e) => onChange(setPinPull(wiring, p.la, e.currentTarget.checked))}
-              error={fieldErr('pulls')}
-              disabled={disabled}
-            />
+                )}
+              </Text>
+            </Stack>
           ) : (
             <Text size="xs" c="dimmed">
               No pull resistor on this pin.

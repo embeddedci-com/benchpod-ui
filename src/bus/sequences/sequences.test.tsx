@@ -136,7 +136,7 @@ describe('steps from log rows', () => {
     ]
     const all = stepsFromRows(rows, new Set([1, 2, 3, 4]))
     // The open was on the pod's pull-ups (the default) without a set_pull row: the setup switches them on.
-    expect(all[0]).toEqual({ tool: 'set_pull', args: { las: [1, 2], enabled: true }, proto: 'I2C', setup: true })
+    expect(all[0]).toEqual({ tool: 'set_pull', args: { las: [1, 2], pull: 'up', enabled: true }, proto: 'I2C', setup: true })
     const steps = all.filter((s) => !s.setup)
     expect(steps.map((s) => s.tool)).toEqual(['i2c_open', 'i2c_transfer'])
     expect(steps[1]).toEqual({ tool: 'i2c_transfer', proto: 'I2C', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } })
@@ -171,10 +171,18 @@ describe('recorded setup (version 2)', () => {
     ]
   }
 
+  it('exports set_pull by direction, and the older enabled form', () => {
+    const code = (args: Record<string, unknown>) => sequenceToPytest({ name: 'x', steps: [{ tool: 'set_pull', args }] }, { date: DATE })
+    expect(code({ las: [1, 2], pull: 'up', enabled: true })).toContain('bp.enable_pullup(1, 2)')
+    expect(code({ las: [7], pull: 'down', enabled: true })).toContain('bp.enable_pulldown(7)')
+    expect(code({ las: [7], pull: 'off', enabled: false })).toContain('bp.disable_pullup(7)')
+    expect(code({ las: [1], enabled: true })).toContain('bp.enable_pullup(1)')
+  })
+
   it('carries an I2C session opened before the selection, with its pull-ups', () => {
     const steps = stepsFromRows(liveRows(), new Set([2, 3]))
     expect(steps.slice(0, 2)).toEqual([
-      { tool: 'set_pull', args: { las: [2, 1], enabled: true }, proto: 'I2C', setup: true },
+      { tool: 'set_pull', args: { las: [2, 1], pull: 'up', enabled: true }, proto: 'I2C', setup: true },
       { tool: 'i2c_open', args: { sda: 2, scl: 1, hz: 100000, pullups: 'pod' }, proto: 'I2C', setup: true },
     ])
     expect(steps.slice(2).map((s) => s.tool)).toEqual(['i2c_transfer', 'i2c_transfer'])
