@@ -72,6 +72,53 @@ export function confirmLines(args: Record<string, unknown>): [string, string][] 
   })
 }
 
+const las = (v: unknown): string => {
+  const list = (Array.isArray(v) ? v : [v]).filter((x) => typeof x === 'number') as number[]
+  return list.length ? list.map((n) => `LA${n}`).join(list.length === 2 ? ' and ' : ', ') : 'the pins'
+}
+const addr = (v: unknown): string => (typeof v === 'number' ? hex(v) : String(v ?? ''))
+
+/**
+ * One plain sentence for a call the pod asks to confirm, for the tools people click by hand. Null
+ * for the rest: the dialog then lists the arguments.
+ */
+export function describeCall(tool: string, a: Record<string, unknown>): string | null {
+  switch (tool) {
+    case 'set_pull':
+      return `Switch ${a.enabled === false ? 'off' : 'on'} the pull resistors on ${las(a.las ?? a.la)}?`
+    case 'i2c_open':
+      return `Open I2C on ${las(a.sda)} (SDA) and ${las(a.scl)} (SCL)${typeof a.hz === 'number' ? ` at ${a.hz / 1000} kHz` : ''}?`
+    case 'i2c_close':
+      return 'Close the I2C session?'
+    case 'i2c_scan':
+      return 'Scan the I2C bus for devices?'
+    case 'i2c_transfer':
+      return `Send an I2C transfer to ${addr(a.addr)}?`
+    case 'spi_transfer':
+      return 'Send an SPI transfer?'
+    case 'gpio_mode':
+      return `Set ${las(a.la)} to ${String(a.mode ?? 'a new mode').replace('_', ' ')}?`
+    case 'gpio_write':
+      return `Drive ${las(a.la)} ${a.value === 1 || a.value === true ? 'high' : 'low'}?`
+    case 'gpio_pulse':
+      return `Pulse ${las(a.la)}?`
+    case 'gpio_release':
+      return `Release ${las(a.la)}?`
+    case 'can_open':
+      return 'Join the CAN bus?'
+    case 'can_write':
+      return `Send a CAN frame${a.id != null ? ` with id ${addr(a.id)}` : ''}?`
+    case 'uart_write':
+      return "Send this to the board's UART?"
+    case 'power_on':
+      return 'Turn on target power?'
+    case 'power_off':
+      return 'Turn off target power?'
+    default:
+      return null
+  }
+}
+
 async function post(base: string, tool: string, args: Record<string, unknown>, confirmed: boolean, opts?: BenchCallOptions): Promise<BenchResult> {
   const r = await fetch(`${base}/${encodeURIComponent(tool)}`, {
     method: 'POST',
@@ -124,26 +171,40 @@ export function createConfirmStore(): ConfirmStore {
   }
 }
 
-/** The "Change the hardware?" dialog for a ConfirmStore. Render it once in the page. */
+/** The call's raw tool and arguments, folded away when a sentence says what it does. */
+function Details({ open, children }: { open: boolean; children: ReactNode }) {
+  if (open) return <>{children}</>
+  return (
+    <details>
+      <summary style={{ cursor: 'pointer', fontSize: 'var(--mantine-font-size-xs)', color: 'var(--mantine-color-dimmed)' }}>Details</summary>
+      {children}
+    </details>
+  )
+}
+
+/** The confirmation dialog for a ConfirmStore: a sentence, or the raw call. Render it once in the page. */
 export function ConfirmDialog({ store }: { store: ConfirmStore }) {
   const pending = useSyncExternalStore(store.subscribe, store.get, store.get)
   return (
-    <Modal opened={!!pending} onClose={() => store.answer(false)} title="Change the hardware?" centered size="md">
+    <Modal opened={!!pending} onClose={() => store.answer(false)} title="Run this on the pod?" centered size="md">
       {pending ? (
         <Stack gap="md">
-          <Stack gap={2}>
-            <Text size="sm" fw={600} ff="monospace">
-              {pending.tool}
-            </Text>
-            {confirmLines(pending.args).map(([k, v]) => (
-              <Text key={k} size="sm" ff="monospace" style={{ wordBreak: 'break-all' }}>
-                <Text span c="dimmed" ff="monospace" inherit>
-                  {k}:
-                </Text>{' '}
-                {v}
+          {describeCall(pending.tool, pending.args) ? <Text size="sm">{describeCall(pending.tool, pending.args)}</Text> : null}
+          <Details open={!describeCall(pending.tool, pending.args)}>
+            <Stack gap={2}>
+              <Text size="sm" fw={600} ff="monospace">
+                {pending.tool}
               </Text>
-            ))}
-          </Stack>
+              {confirmLines(pending.args).map(([k, v]) => (
+                <Text key={k} size="sm" ff="monospace" style={{ wordBreak: 'break-all' }}>
+                  <Text span c="dimmed" ff="monospace" inherit>
+                    {k}:
+                  </Text>{' '}
+                  {v}
+                </Text>
+              ))}
+            </Stack>
+          </Details>
           <Group justify="flex-end" gap="xs">
             <Button variant="default" onClick={() => store.answer(false)}>
               Cancel

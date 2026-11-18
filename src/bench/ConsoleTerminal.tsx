@@ -229,7 +229,7 @@ export function ConsoleTerminal({
             <TerminalText text={text} maxHeight={100000} />
           ) : (
             <Text size="sm" c="dimmed">
-              {open ? 'Waiting for the board…' : "The board's console appears here. Open the UART to type into it (channels and baud left empty come from the wiring); the agent's console output shows here too."}
+              {open ? 'Waiting for the board…' : "Open the UART to see and type into the board's console. The agent's console output shows here too."}
             </Text>
           )}
         </Box>

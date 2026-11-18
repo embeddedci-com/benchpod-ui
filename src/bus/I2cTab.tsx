@@ -165,7 +165,12 @@ export function I2cTab({
   }
   const close = async () => {
     const s = await run<Session>('close', 'i2c_close', {})
-    if (s) setSession(s)
+    if (s) {
+      setSession(s)
+      // A closed bus has no last transfer or scan to show.
+      setFound(null)
+      setLast(null)
+    }
   }
   const pull = async (on: boolean): Promise<boolean> => {
     const las = [sda, scl].filter(Boolean).map(Number)
