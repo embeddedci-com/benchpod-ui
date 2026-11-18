@@ -29,6 +29,7 @@ import { CodeEditor } from './CodeEditor'
 import type { FileHost } from './files'
 import { LineChart, type ChartWindow } from './LineChart'
 import type { RunBlock } from './RunPanel'
+import { HelpTip } from '../../help/HelpTip'
 
 type Doc = { [k: string]: YamlValue }
 type Seg = { [k: string]: YamlValue }
@@ -504,7 +505,8 @@ function FaultList({ faults, onChange }: { faults: Seg[]; onChange: (f: Seg[]) =
         </Group>
         {faults.length === 0 ? (
           <Text size="xs" c="dimmed">
-            No faults. A fault switches on at its time, for its duration (empty: until the end).
+            No faults.{' '}
+            <HelpTip label="faults" docs="/docs/benchpod-sensors">A fault switches on at its time, for its duration (empty: until the end).</HelpTip>
           </Text>
         ) : (
           <div style={{ overflowX: 'auto' }}>

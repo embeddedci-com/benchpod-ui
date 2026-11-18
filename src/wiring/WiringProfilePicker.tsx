@@ -147,7 +147,7 @@ export function WiringProfilePicker({
       ) : null}
       {readOnly ? (
         <Text size="xs" c="dimmed">
-          The pod is offline: this is the last copy. Profiles live on the pod, so you can change them while it&apos;s connected.
+          Offline: the last copy, read-only until the pod connects.
         </Text>
       ) : null}
     </Stack>

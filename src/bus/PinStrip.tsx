@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActionIcon, Box, Group, Paper, Stack, Text, Tooltip } from '@mantine/core'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
+import { HelpTip } from '../help/HelpTip'
 
 // All 14 LA channels in one row, from the la_pins tool: the wiring's name, what owns the pin, which
 // way the DUT signal goes, the live level, the pull resistor and the pod's warnings. The bus
@@ -187,9 +188,10 @@ export function PinStrip({
           <Text size="xs" fw={600}>
             {title}
           </Text>
-          <Text size="xs" c="dimmed" lineClamp={1} data-testid="pin-legend">
-            Each pin: wiring name, what uses it, the board&apos;s direction (board in, board out, both), the pull resistor, the live level.
-          </Text>
+          <HelpTip label="pin strip">
+            Each pin: its name in the profile, what uses it, the board&apos;s direction (board in, board out, both), the
+            pull resistor and the live level.
+          </HelpTip>
         </Group>
         <Group gap={6} wrap="nowrap">
           {error ? (

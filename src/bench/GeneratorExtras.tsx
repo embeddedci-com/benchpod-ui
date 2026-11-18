@@ -21,6 +21,7 @@ import {
   type Segment,
   type SegmentShape,
 } from './generatorMath'
+import { HelpTip } from '../help/HelpTip'
 
 // The rest of the web app's Generator tab for the bench panel: fault injection into a library
 // waveform, the segment builder and the control loop. Host-neutral: every output is a BenchPod
@@ -74,14 +75,17 @@ export function FaultControls({ library, output, run, busy, setError }: { librar
   if (!items.length)
     return (
       <Text size="xs" c="dimmed">
-        Save a waveform to the library first (the Output tab: a capture or a CSV), then inject a fault into it here.
+        Save a waveform to the library first (Output tab).
       </Text>
     )
   const durS = wf ? wf.sample_count / wf.sample_rate_hz : 0
   return (
     <Stack gap="xs">
       <Text size="xs" c="dimmed">
-        Replay a library waveform with a window replaced by a fault, so the board sees a dropout, a glitch or a jammed signal while the console and captures keep running.
+        Replays a waveform with a fault in a window.{' '}
+        <HelpTip label="faults" docs="/docs/benchpod-workspace#generator">
+          The board sees a dropout, a glitch or a jammed signal while the console and captures keep running.
+        </HelpTip>
       </Text>
       <Group gap="xs" align="flex-end">
         <Select size="xs" style={{ flex: 1 }} label="Waveform" data={items.map((w) => ({ value: w.id, label: w.name }))} value={wf?.id ?? null} onChange={setId} allowDeselect={false} />
@@ -176,7 +180,10 @@ export function SegmentControls({ call, library, output, run, busy, setError }: 
   return (
     <Stack gap="xs">
       <Text size="xs" c="dimmed">
-        A signal from pieces: a ramp goes from start to end, a hold stays at its start, a step jumps to its end. It loops until Stop.
+        Ramps, holds and steps, looped until Stop.{' '}
+        <HelpTip label="segments" docs="/docs/benchpod-workspace#generator">
+          A ramp goes from start to end, a hold stays at its start, a step jumps to its end.
+        </HelpTip>
       </Text>
       {segs.map((s, i) => (
         <Group key={i} gap={4} wrap="nowrap" align="flex-end">
@@ -349,8 +356,12 @@ export function LoopControls({ call, output, run, busy }: { call: BenchCall; out
   return (
     <Stack gap="xs">
       <Text size="xs" c="dimmed">
-        The FPGA reads an input every tick, looks it up in the curve, moves the output toward it and holds it inside the clamp. With the ADC as input it emulates a source that reacts to the board (a solar panel, a supply in foldback);
-        Fixed and Sweep check the output on its own.
+        Runs on the pod until Stop.{' '}
+        <HelpTip label="control loop" docs="/docs/benchpod-workspace#generator">
+          Each tick the FPGA reads an input, looks it up in the curve, moves the output toward it and clamps it. With the
+          ADC as input it emulates a source that reacts to the board (a solar panel, a supply in foldback); Fixed and
+          Sweep check the output on its own.
+        </HelpTip>
       </Text>
       {output === 'current_out' ? (
         <Text size="xs" c="orange">

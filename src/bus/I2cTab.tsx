@@ -5,6 +5,7 @@ import { fmtSi, hex2, nackWhere, spacedHex } from './busLog'
 import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
 import type { SendAgainRequest } from './sendAgain'
 import { DeviceRegs } from './DeviceRegs'
+import { HelpTip } from '../help/HelpTip'
 
 // The pod as I2C master on two LA pins: open a session (pins, speed, pull-ups), send a write, a
 // read or both, scan the bus, close. The tools are i2c_open, i2c_transfer, i2c_scan, i2c_close;
@@ -312,7 +313,8 @@ export function I2cTab({
       ) : null}
       {isOpen && session?.hz ? (
         <Text size="xs" c="dimmed">
-          A real bus runs a bit slower than this: the rise time adds to each clock. Capture it to see the rate on the wire.
+          The wire runs a bit slower.{' '}
+          <HelpTip label="I2C rate">The rise time adds to each clock. Capture it to see the rate on the wire.</HelpTip>
         </Text>
       ) : null}
 
@@ -354,8 +356,11 @@ export function I2cTab({
             </Button>
           </Group>
           <Text size="xs" c="dimmed">
-            Write only, read only, or a write then a read (a repeated START). Neither: a probe of the address.
-            {capturing ? ' Capture it: the trace starts just before SDA falls and decodes the transaction.' : ''}
+            Write, read, or both (a repeated START).{' '}
+            <HelpTip label="I2C transfer" docs="/docs/benchpod-workspace#drive">
+              Neither: a probe of the address.
+              {capturing ? ' Capture it: the trace starts just before SDA falls and decodes the transaction.' : ''}
+            </HelpTip>
           </Text>
           {last ? (
             <Text size="xs" ff="monospace" c={last.ack ? 'teal' : 'orange'} data-testid="i2c-result">

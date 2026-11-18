@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Divider, Group, Select, Stack, Switch, Text, T
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { parseHexBytes } from './I2cTab'
 import { fmtSi } from './busLog'
+import { HelpTip } from '../help/HelpTip'
 
 // The pod's CAN port: open it (bit rate, mode, termination, CAN FD data rate), send a frame, read
 // what came in, check the link, close. The tools are can_open, can_write, can_read, can_status
@@ -125,7 +126,8 @@ export function CanTab({ call }: { call: BenchCall }) {
         </Button>
       </Group>
       <Text size="xs" c="dimmed">
-        Termination: switch it on when the pod is at one end of the bus. CAN FD needs pod firmware 3.10.2 or later.
+        Termination: on when the pod is at one end of the bus.{' '}
+        <HelpTip label="CAN" docs="/docs/benchpod-workspace#drive">CAN FD needs pod firmware 3.10.2 or later.</HelpTip>
       </Text>
       {session ? (
         <Text size="xs" ff="monospace" c={isOpen ? 'teal' : 'dimmed'} data-testid="can-session">

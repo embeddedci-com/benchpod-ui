@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Divider, Group, NumberInput, Select, Stack, Te
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { fmtSi } from './busLog'
 import type { SendCapture } from './sendCapture'
+import { HelpTip } from '../help/HelpTip'
 
 // LA channels as GPIO, by hand: claim a pin (output, open drain, input), drive it, read it, pulse
 // it, wait for a level, release it. The tools are gpio_mode, gpio_write, gpio_read, gpio_pulse,
@@ -113,8 +114,11 @@ export function GpioTab({
         {sendCapture ? <Checkbox size="xs" label="Capture it" aria-label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={4} /> : null}
       </Group>
       <Text size="xs" c="dimmed">
-        Open drain: 0 pulls the pin low, 1 lets it go. Read works on any pin, whatever owns it.
-        {capture && sendCapture ? ' Capture it: the pin must be an output already; the trace starts just before its edge.' : ''}
+        Read works on any pin.{' '}
+        <HelpTip label="GPIO" docs="/docs/benchpod-workspace#drive">
+          Open drain: 0 pulls the pin low, 1 lets it go. Read works whatever owns the pin.
+          {capture && sendCapture ? ' Capture it: the pin must be an output already; the trace starts just before its edge.' : ''}
+        </HelpTip>
       </Text>
 
       <Divider label="Pulse" labelPosition="left" />
@@ -126,7 +130,8 @@ export function GpioTab({
         </Button>
       </Group>
       <Text size="xs" c="dimmed">
-        High for the width, low for the width between pulses. The pin must be free or an output at 0.
+        The pin must be free or an output at 0.{' '}
+        <HelpTip label="pulse">High for the width, then low for the width between pulses.</HelpTip>
       </Text>
 
       <Divider label="Wait for a level" labelPosition="left" />

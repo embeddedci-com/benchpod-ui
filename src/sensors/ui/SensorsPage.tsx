@@ -10,6 +10,7 @@ import { useEngine, usePodStatus } from './hooks'
 import { InstanceCard, type BenchHooks } from './RunPanel'
 import { SensorEditor, type EditorDoc } from './SensorEditor'
 import { StimulusEditor } from './StimulusEditor'
+import { HelpTip } from '../../help/HelpTip'
 
 export type SensorsPageProps = {
   store: SensorStore
@@ -540,8 +541,11 @@ function LibraryCard({
           )}
         </Group>
         <Text size="xs" c="dimmed">
-          Ready-made sensors from the public sensor library. Open one to preview it or run it as is; duplicate it to change it.
-          {settings?.can_change ? (scope === 'computer' ? ' The version applies on this computer.' : ' The version applies to your whole organization.') : ''}
+          The public sensor library: duplicate one to change it.
+          {settings?.can_change ? (scope === 'computer' ? ' The version applies on this computer.' : ' The version applies to your whole organization.') : ''}{' '}
+          <HelpTip label="sensor library" docs="/docs/benchpod-sensors">
+            Open a sensor to preview it or run it as is.
+          </HelpTip>
         </Text>
         {libError && <Alert color="red">{libError}</Alert>}
         {lib?.warnings?.map((w) => (

@@ -185,7 +185,7 @@ export function SequencesPanel({ store, call, selected, onClearSelection, names 
         </Text>
       ) : list.length === 0 ? (
         <Text size="xs" c="dimmed">
-          Select rows in the log and save them as a sequence: run it again later, or export it as a pytest test.
+          Save rows from the log as a sequence to run again or export as a pytest test.
         </Text>
       ) : (
         <Stack gap={4}>
@@ -342,7 +342,7 @@ export function SequencesPanel({ store, call, selected, onClearSelection, names 
         {exporting ? (
           <Stack gap="sm">
             <Text size="xs" c="dimmed">
-              Each read asserts what the pod saw when you recorded the sequence. Edit the expected values here or in the file.
+              Each read asserts what the pod saw when you recorded it; edit the expected values here or in the file.
             </Text>
             <Textarea
               value={exporting.code}
