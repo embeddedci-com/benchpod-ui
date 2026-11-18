@@ -49,6 +49,8 @@ export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusS
 export { PinsEditor, PIN_KIND_COLORS } from './wiring/PinsEditor'
 export { pinViews, assignPin, updateSignal, setPinPull, pullSwitchLabel, signalUse, nextSignalName, type PinView, type PinKind, type SignalUse } from './wiring/pins'
 export { WiringDiagram, changedChannels } from './wiring/WiringDiagram'
+export { BoardView, BoardViewModal } from './wiring/BoardView'
+export { boardSheet, boardSvg, boardSheetHtml, sheetRows, boardHeaderFromStatus, detectBoardHeader, type PodReply, BOARD_HEADER_LABELS, HEADER_PINS, type BoardHeader, type HeaderPin, type HeaderPinKind, type BoardSheet, type SheetPin, type SheetRow } from './wiring/boardSheet'
 export { WiringProfilePicker, WIRING_PROFILE_NAME_RE, MAX_WIRING_PROFILES, type WiringProfileItem, type NewProfileFrom } from './wiring/WiringProfilePicker'
 export {
   effectiveWiring,

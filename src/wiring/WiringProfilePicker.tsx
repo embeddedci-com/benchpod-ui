@@ -32,6 +32,7 @@ export function WiringProfilePicker({
   onDelete,
   onCreate,
   menu,
+  actions,
   busy,
   readOnly,
 }: {
@@ -45,6 +46,8 @@ export function WiringProfilePicker({
   onCreate?: (name: string, from: NewProfileFrom) => void
   /** More entries for the ⋯ menu (Menu.Item elements). */
   menu?: ReactNode
+  /** Buttons shown before the ⋯ menu, e.g. Visualize. */
+  actions?: ReactNode
   busy?: boolean
   /** The pod is offline: show the last copy, allow no changes. */
   readOnly?: boolean
@@ -102,6 +105,7 @@ export function WiringProfilePicker({
             New
           </Button>
         ) : null}
+        {actions}
         {menu || (current && onDelete) ? (
           <Menu position="bottom-end" withinPortal>
             <Menu.Target>
