@@ -212,6 +212,34 @@ describe('ConsoleTerminal', () => {
   })
 })
 
+describe('ConsoleTerminal one wire and boot entry', () => {
+  it('sends half_duplex without tx and the entry with its bytes', async () => {
+    localStorage.clear()
+    const { ConsoleTerminal } = await import('./ConsoleTerminal')
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+    const calls: [string, Record<string, unknown> | undefined][] = []
+    const call = vi.fn((tool: string, args?: Record<string, unknown>) => {
+      if (tool !== 'uart_open') return new Promise<never>(() => {})
+      calls.push([tool, args])
+      return Promise.resolve({ text: '{}', structured: { open: true } })
+    })
+    render(
+      <MantineProvider>
+        <ConsoleTerminal call={call} logBase="/api/console" agentRunning={false} />
+      </MantineProvider>,
+    )
+    fireEvent.click(screen.getByLabelText('One wire and boot entry'))
+    fireEvent.click(await screen.findByLabelText('One wire (half duplex)'))
+    fireEvent.click(screen.getByLabelText('Boot entry before opening'))
+    fireEvent.change(screen.getByLabelText('First bytes (hex)'), { target: { value: '00 c5' } })
+    fireEvent.click(screen.getByText('Open UART'))
+    await waitFor(() => expect(calls.length).toBe(1))
+    expect(calls[0]).toEqual(['uart_open', { half_duplex: true, entry: { reset_ms: 10, tx_low: true, hold_ms: 10, idle_ms: 10, data_hex: '00c5' } }])
+    expect(JSON.parse(localStorage.getItem('benchpod.uartLine') as string).halfDuplex).toBe(true)
+    localStorage.clear()
+  })
+})
+
 describe('describeCall', () => {
   it('says what a confirmed call does in one sentence, or leaves it to the arguments', () => {
     expect(describeCall('set_pull', { las: [2, 1], enabled: true })).toBe('Switch on the pull resistors on LA2 and LA1?')
