@@ -110,7 +110,7 @@ describe('FlashControls', () => {
     const seen: { tool: string; args: Record<string, unknown>; approved?: boolean }[] = []
     const call = vi.fn(async (tool: string, args: Record<string, unknown> = {}, opts?: { approved?: boolean }): Promise<BenchResult> => {
       seen.push({ tool, args, approved: opts?.approved })
-      if (tool === 'wiring') return { text: '', structured: { efuse: 1, swd_target: 'target/stm32f4x.cfg' } }
+      if (tool === 'wiring') return { text: '', structured: { efuse: 1, swd_target: 'target/stm32f4x.cfg', profile: { swd_swclk: 11, swd_swdio: 12 } } }
       if (tool === 'flash') return { text: '', structured: flashOk, ms: 3600 }
       if (tool === 'power_cycle_and_capture') return { text: 'PinConflictError: uart_proxy_start: pin conflict: LA3 is in use by uart_rx', is_error: true }
       return { text: '', structured: {} }
@@ -126,6 +126,18 @@ describe('FlashControls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Power-cycle and show the boot log' }))
     expect((await screen.findByTestId('boot-note')).textContent).toContain('boot log is in the Console')
     expect(seen.filter((x) => x.tool.startsWith('power_o')).map((x) => [x.tool, x.approved ?? false])).toEqual([['power_off', false], ['power_on', true]])
+  })
+
+  it('asks for the SWD pins in the pins profile, and does not flash without them', async () => {
+    cleanup()
+    const { FlashControls } = await import('./FlashControls')
+    const call = vi.fn(async (tool: string): Promise<BenchResult> => {
+      if (tool === 'wiring') return { text: '', structured: { efuse: 1, swd_target: 'target/stm32f4x.cfg', profile: {} } }
+      return { text: '', structured: {} }
+    })
+    render(<MantineProvider><FlashControls call={call} firmware={store} /></MantineProvider>)
+    expect((await screen.findByTestId('flash-no-swd')).textContent).toContain('Set SWCLK and SWDIO in the Pins tab')
+    expect((screen.getByRole('button', { name: 'Flash' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })
 
@@ -206,6 +218,38 @@ describe('describeCall', () => {
     expect(describeCall('set_pull', { las: [2, 1], enabled: false })).toBe('Switch off the pull resistors on LA2 and LA1?')
     expect(describeCall('i2c_open', { sda: 2, scl: 1, hz: 100000, pullups: 'pod' })).toBe('Open I2C on LA2 (SDA) and LA1 (SCL) at 100 kHz?')
     expect(describeCall('gpio_write', { la: 5, value: 1 })).toBe('Drive LA5 high?')
-    expect(describeCall('flash', { file: 'x.elf' })).toBeNull()
+    expect(describeCall('flash', { file: '/f/x.elf', target: 'target/stm32f4x.cfg' })).toBe('Flash x.elf to the board over SWD?')
+    expect(describeCall('flash', { file: '/f/app.bin', target: 'esp32s3' })).toBe('Flash app.bin to the ESP32S3 over its UART?')
+    expect(describeCall('gpio_mystery', {})).toBeNull()
+  })
+})
+
+describe('EspFlashControls', () => {
+  const store = { upload: vi.fn(), recent: async () => [{ name: 'app.bin', path: '/f/app.bin', size: 4096, modified: '' }, { name: 'x.elf', path: '/f/x.elf', size: 1, modified: '' }] }
+
+  it('flashes an ESP32 with the pins from the profile', async () => {
+    cleanup()
+    const { EspFlashControls } = await import('./EspFlashControls')
+    const seen: { tool: string; args: Record<string, unknown> }[] = []
+    const call = vi.fn(async (tool: string, args: Record<string, unknown> = {}): Promise<BenchResult> => {
+      seen.push({ tool, args })
+      if (tool === 'wiring') return { text: '', structured: { profile: { uart_rx: 3, uart_tx: 4, signals: [{ la: 6, name: 'BOOT' }] } } }
+      if (tool === 'flash') return { text: '', structured: { ok: true, stdout_tail: 'ESP32-S3: 1 region(s)' } }
+      return { text: '', structured: {} }
+    })
+    render(<MantineProvider><EspFlashControls call={call} firmware={store} /></MantineProvider>)
+    expect((await screen.findByTestId('esp-pins')).textContent).toContain('RX LA3 · TX LA4 · BOOT LA6')
+    const flash = screen.getByRole('button', { name: 'Flash' })
+    expect((flash as HTMLButtonElement).disabled).toBe(true) // no image picked yet
+  })
+
+  it('asks for the UART and BOOT pins in the pins profile', async () => {
+    cleanup()
+    const { EspFlashControls } = await import('./EspFlashControls')
+    const call = vi.fn(async (tool: string): Promise<BenchResult> =>
+      tool === 'wiring' ? { text: '', structured: { profile: { uart_rx: 3, uart_tx: 4, signals: [] } } } : { text: '', structured: {} },
+    )
+    render(<MantineProvider><EspFlashControls call={call} firmware={store} /></MantineProvider>)
+    expect((await screen.findByTestId('esp-no-pins')).textContent).toContain('signal named BOOT')
   })
 })
