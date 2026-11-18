@@ -48,6 +48,15 @@ describe('PinsEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: /^LA4: UART TX/ }))
     expect(screen.getByLabelText('Baud (both UART pins)', { selector: 'input' })).toBeTruthy()
   })
+  it('sets the UART parity and stop bits on a UART pin', async () => {
+    render(<MantineProvider><Host start={start} /></MantineProvider>)
+    fireEvent.click(screen.getByRole('button', { name: /^LA5: UART RX/ }))
+    fireEvent.click(screen.getByLabelText('Parity', { selector: 'input' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Even', hidden: true }))
+    fireEvent.click(screen.getByLabelText('Stop bits', { selector: 'input' }))
+    fireEvent.click(await screen.findByRole('option', { name: '2', hidden: true }))
+    expect([last.uart_parity, last.uart_stop_bits]).toEqual(['even', 2])
+  })
   it('shows what the pod reports: a warning mark on the pin, the words in its editor', () => {
     const live = [{ la: 6, function: 'gpio', gpio: 'output', level: 1, pull: 'up', pull_on: true, warn: 1 }]
     render(<MantineProvider><PinsEditor wiring={start} onChange={() => {}} live={live} /></MantineProvider>)

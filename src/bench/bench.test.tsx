@@ -180,7 +180,7 @@ describe('SPI flash helpers', () => {
 })
 
 describe('ConsoleTerminal', () => {
-  it('opens the UART 8N1 by default and with parity and stop bits from the Frame select', async () => {
+  it('opens the UART with the profile frame by default, and with parity and stop bits when picked', async () => {
     const { ConsoleTerminal } = await import('./ConsoleTerminal')
     // The log poll and the console's uart_read poll never answer here, so neither loops.
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
@@ -204,7 +204,7 @@ describe('ConsoleTerminal', () => {
         <ConsoleTerminal call={call} logBase="/api/console" agentRunning={false} />
       </MantineProvider>,
     )
-    fireEvent.click(screen.getAllByLabelText(/Frame/)[0])
+    fireEvent.click(screen.getAllByLabelText(/Parity and stop bits/)[0])
     fireEvent.click(await screen.findByRole('option', { name: '8E2', hidden: true }))
     fireEvent.click(screen.getByText('Open UART'))
     await waitFor(() => expect(calls.length).toBe(2))

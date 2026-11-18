@@ -15,7 +15,7 @@ import { benchData, benchError, type BenchCall } from './benchCall'
 // with uart_read (as a poll); while the agent runs it only shows the log, so it never takes the
 // output the agent is waiting for.
 
-/** Data bits, parity (N/E/O), stop bits; anything but 8N1 needs pod firmware 3.10.8+. */
+/** Data bits, parity (N/E/O), stop bits; anything but 8N1 needs pod firmware 3.10.8+. Blank: the pins profile's. */
 const UART_FRAMES = ['8N1', '8E1', '8O1', '8N2', '8E2', '8O2']
 
 export type ConsoleLogEntry = { seq: number; dir: 'out' | 'in' | 'note'; text: string; source?: string }
@@ -60,8 +60,8 @@ export function ConsoleTerminal({
   const [line, setLine] = useState('')
   const [ending, setEnding] = useState('lf')
   const [baud, setBaud] = useState<number | ''>('')
-  // Data bits, parity and stop bits: 8N1 unless set. Pod firmware 3.10.8+.
-  const [frame, setFrame] = useState('8N1')
+  // Data bits, parity and stop bits; null takes the pins profile's (8N1 unless it says otherwise).
+  const [frame, setFrame] = useState<string | null>(null)
   const [rx, setRx] = useState<string | null>(null)
   const [tx, setTx] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -160,9 +160,10 @@ export function ConsoleTerminal({
     if (baud) args.baud = baud
     if (rx) args.rx = Number(rx)
     if (tx) args.tx = Number(tx)
-    if (frame.charAt(1) === 'E') args.parity = 'even'
-    if (frame.charAt(1) === 'O') args.parity = 'odd'
-    if (frame.charAt(2) === '2') args.stop_bits = 2
+    if (frame) {
+      args.parity = { E: 'even', O: 'odd' }[frame.charAt(1)] ?? 'none'
+      args.stop_bits = frame.charAt(2) === '2' ? 2 : 1
+    }
     const r = await run('uart_open', args)
     if (benchData(r)) setOpen(true)
   }
@@ -200,7 +201,7 @@ export function ConsoleTerminal({
               max={3_000_000}
               hideControls
             />
-            <Select size="xs" w={72} aria-label="Frame (data bits, parity, stop bits)" data={UART_FRAMES} value={frame} onChange={(v) => setFrame(v ?? '8N1')} allowDeselect={false} />
+            <Select size="xs" w={84} placeholder="parity" aria-label="Parity and stop bits (blank: the pins profile's)" data={UART_FRAMES} value={frame} onChange={setFrame} clearable />
           </Group>
         )}
         <Group gap={4} wrap="nowrap">

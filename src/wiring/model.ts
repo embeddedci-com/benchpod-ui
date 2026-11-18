@@ -62,6 +62,8 @@ export type WiringSignal = {
   description: string
 }
 
+export type UartParity = 'none' | 'even' | 'odd'
+
 export type Wiring = {
   version: number
   /** LA I/O-bank voltage in mV (1800 or 3300). Must be set on the pod before any LA op. */
@@ -73,6 +75,9 @@ export type Wiring = {
   /** LA channel the pod drives (the DUT's RX); null = not wired. */
   uart_tx: number | null
   uart_baud: number
+  /** The UART frame after the 8 data bits: parity, then stop bits. 8N1 by default (firmware 3.10.8+ for others). */
+  uart_parity: UartParity
+  uart_stop_bits: 1 | 2
   i2c_sda: number | null
   i2c_scl: number | null
   i2c_addr: string
@@ -201,6 +206,8 @@ export const WIRING_DEFAULTS: Wiring = {
   uart_rx: 5,
   uart_tx: 4,
   uart_baud: 115200,
+  uart_parity: 'none',
+  uart_stop_bits: 1,
   i2c_sda: 1,
   i2c_scl: 2,
   i2c_addr: '0x76',
@@ -329,6 +336,10 @@ export function coerceStoredWiring(remote: Record<string, unknown>): StoredWirin
     } else if (k === 'pulls') {
       if (v === null) out.pulls = null
       else if (Array.isArray(v)) out.pulls = normalizePulls(v.filter(hasPullResistor))
+    } else if (k === 'uart_parity') {
+      if (v === 'none' || v === 'even' || v === 'odd') out[k] = v
+    } else if (k === 'uart_stop_bits') {
+      if (v === 1 || v === 2) out[k] = v
     } else if (k === 'loop_input_entry') {
       if (v === 'shunt' || v === 'mv_per_unit') out[k] = v
     } else if (k === 'loop_output_path') {
@@ -487,6 +498,9 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
     if (typeof b !== 'number' || !Number.isInteger(b) || b < 300 || b > 4000000)
       err('uart_baud', 'uart_baud must be a whole number between 300 and 4000000')
   }
+  if (has('uart_parity') && !['none', 'even', 'odd'].includes(raw.uart_parity as string))
+    err('uart_parity', 'uart_parity must be "none", "even" or "odd"')
+  if (has('uart_stop_bits') && raw.uart_stop_bits !== 1 && raw.uart_stop_bits !== 2) err('uart_stop_bits', 'uart_stop_bits must be 1 or 2')
   if (has('i2c_addr')) {
     const a = raw.i2c_addr
     const n = typeof a === 'string' && /^0x[0-9a-f]{1,2}$/i.test(a.trim()) ? Number.parseInt(a.trim().slice(2), 16) : NaN
