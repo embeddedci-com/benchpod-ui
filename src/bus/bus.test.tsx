@@ -183,7 +183,7 @@ describe('I2cTab', () => {
     await waitFor(() => expect(screen.getByTestId('i2c-session').textContent).toContain('open: SDA LA1, SCL LA2'))
     expect(screen.queryByText(/set_pull\(/)).toBeNull()
     expect(screen.getByTestId('i2c-pull-hint').textContent).toBe("The pod's pull-ups are on for LA1 and LA2.")
-    expect(seen.find((x) => x.tool === 'set_pull')?.args).toEqual({ las: [1, 2], enabled: true })
+    expect(seen.find((x) => x.tool === 'set_pull')?.args).toEqual({ las: [1, 2], pull: 'up', enabled: true })
     // one yes covers both: the open after the pull-ups goes as approved
     expect(seen.filter((x) => x.tool === 'i2c_open').map((x) => !!x.approved)).toEqual([false, true])
   })

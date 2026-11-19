@@ -128,9 +128,12 @@ function stepCode(ctx: Ctx, s: SequenceStep, n: number) {
       // enable_pullup takes channel numbers: a wiring name becomes its channel when the wiring has it.
       const las = laList(a.las).map((x) => numbered(ctx, x))
       const list = las.map((x) => (typeof x === 'number' ? String(x) : `bp.wiring.la(${pyStr(String(x))})`)).join(', ')
-      line(ctx, `bp.${a.enabled ? 'enable' : 'disable'}_pullup(${list})${laComment(ctx, las)}`)
+      // pull names the direction; enabled is the older form (true = up, the I2C pull-ups)
+      const dir = typeof a.pull === 'string' ? a.pull : a.enabled ? 'up' : 'off'
+      const kind = dir === 'down' ? 'pulldown' : 'pullup'
+      line(ctx, `bp.${dir === 'off' ? 'disable' : 'enable'}_${kind}(${list})${laComment(ctx, las)}`)
       // The pod keeps them on after the test: switch them off at the end, even when an assert fails.
-      if (a.enabled && ctx.stack) line(ctx, `stack.callback(bp.disable_pullup, ${list})  # the pull-ups go off again at the end`)
+      if (dir !== 'off' && ctx.stack) line(ctx, `stack.callback(bp.disable_${kind}, ${list})  # the ${kind === 'pulldown' ? 'pull-downs' : 'pull-ups'} go off again at the end`)
       return
     }
     case 'i2c_open': {

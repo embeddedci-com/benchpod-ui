@@ -4,13 +4,15 @@
 // the pod keep working with the same keys.
 
 import {
+  canonicalPulls,
   LA_CHANNEL_COUNT,
   LA_PULLS,
-  normalizePulls,
+  pullDirections,
   WIRING_ROLES,
   WIRING_ROLE_LABELS,
   withDutDir,
   type LaPull,
+  type PullDir,
   type Wiring,
   type WiringDirection,
   type WiringRole,
@@ -67,6 +69,8 @@ export type PinView = {
   pull: LaPull
   /** The profile switches this pin's pull resistor on (false also when the profile leaves pulls alone). */
   pullOn: boolean
+  /** The direction the profile pulls this pin, null when off or not set. */
+  pullDir: PullDir | null
 }
 
 function usersOf(w: Wiring, la: number): PinUser[] {
@@ -80,6 +84,7 @@ function usersOf(w: Wiring, la: number): PinUser[] {
 
 /** LA1..LA14 as the editor shows them. */
 export function pinViews(w: Wiring): PinView[] {
+  const dirs = pullDirections(w.pulls)
   return LA_PULLS.map((pull) => {
     const users = usersOf(w, pull.la)
     const first = users[0]
@@ -89,7 +94,8 @@ export function pinViews(w: Wiring): PinView[] {
       kind: first ? (first.kind === 'role' ? roleKind(first.role) : 'signal') : null,
       short: users.length ? users.map((u) => u.label).join(' / ') : 'free',
       pull,
-      pullOn: !!pull.dir && (w.pulls ?? []).includes(pull.la),
+      pullOn: dirs.has(pull.la),
+      pullDir: dirs.get(pull.la) ?? null,
     }
   })
 }
@@ -161,16 +167,34 @@ export function updateSignal(w: Wiring, index: number, change: Partial<Pick<Wiri
   return patch
 }
 
-/** The profile change that switches one pin's pull resistor on or off. */
-export function setPinPull(w: Wiring, la: number, on: boolean): Partial<Wiring> {
+/**
+ * The profile change that pulls one pin `dir` ("up" / "down"), or switches its pull off (null).
+ * `true` is the pin's own direction. Written as the list of channels while every pull is its
+ * channel's own direction, so older readers keep working.
+ */
+export function setPinPull(w: Wiring, la: number, dir: PullDir | null | boolean): Partial<Wiring> {
   const pull = LA_PULLS[la - 1]
   if (!pull?.dir) return {}
-  const cur = w.pulls ?? []
-  return { pulls: normalizePulls(on ? [...cur, la] : cur.filter((x) => x !== la)) }
+  const want = dir === true ? pull.dir : dir === false ? null : dir
+  const dirs = pullDirections(w.pulls)
+  if (want) dirs.set(la, want)
+  else dirs.delete(la)
+  return { pulls: canonicalPulls(dirs) }
+}
+
+/**
+ * The directions a pin can pull: the pod's own answer when it is connected (la_pins `pull_dirs`,
+ * firmware with la_pull_dir; older firmware names one direction in `pull`), else today's table.
+ */
+export function pinPullDirs(pull: LaPull, live?: { pull?: string | null; pull_dirs?: string[] | null } | null): PullDir[] {
+  if (live && Array.isArray(live.pull_dirs)) return live.pull_dirs.filter((d): d is PullDir => d === 'up' || d === 'down')
+  if (live && (live.pull === 'up' || live.pull === 'down')) return [live.pull]
+  if (live && live.pull === null) return []
+  return pull.dirs
 }
 
 /** "Pull-up (4.7k)" / "Pull-down (10k)": the switch label for a pin's resistor; null when it has none. */
-export function pullSwitchLabel(p: LaPull): string | null {
-  if (!p.dir) return null
-  return `Pull-${p.dir} (${p.ohms})`
+export function pullSwitchLabel(p: LaPull, dirs: PullDir[] = p.dirs): string | null {
+  if (!dirs.length) return null
+  return `Pull-${dirs.join('/')}${p.ohms ? ` (${p.ohms})` : ''}`
 }

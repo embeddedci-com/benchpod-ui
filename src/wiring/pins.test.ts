@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { coerceStoredWiring, effectiveWiring, validateWiring, WIRING_UNDEFINED, type Wiring } from './model'
-import { assignPin, pinUseChoice, pinViews, pullSwitchLabel, setPinPull, signalUse, updateSignal } from './pins'
+import { canonicalPulls, coerceStoredWiring, effectiveWiring, LA_PULLS, pullDirections, validateWiring, WIRING_UNDEFINED, type Wiring } from './model'
+import { assignPin, pinPullDirs, pinUseChoice, pinViews, pullSwitchLabel, setPinPull, signalUse, updateSignal } from './pins'
 
 const apply = (w: Wiring, patch: Partial<Wiring>): Wiring => ({ ...w, ...patch })
 const base: Wiring = { ...WIRING_UNDEFINED, la_mv: 3300, efuse: 1, i2c_addr: '0x76', uart_rx: 5, uart_tx: 4, i2c_sda: 1, i2c_scl: 2, signals: [{ name: 'READY', la: 9, direction: 'input', active_low: false, description: '' }] }
@@ -97,6 +97,37 @@ describe('pulls', () => {
     expect(validateWiring({ pulls: [1, 9] }).errors.map((e) => e.field)).toEqual(['pulls[1]'])
     expect(validateWiring({ pulls: 'on' }).errors.map((e) => e.field)).toEqual(['pulls'])
     expect(validateWiring({ version: 2, la_mv: 1800, pulls: [1] }).warnings.map((e) => e.field)).toContain('pulls')
+  })
+  it('pulls by direction, written as the list while every pull is its own direction', () => {
+    let w = apply(base, setPinPull(base, 2, 'up'))
+    w = apply(w, setPinPull(w, 7, 'down'))
+    expect(w.pulls).toEqual([2, 7])
+    expect(pinViews(w)[6].pullDir).toBe('down')
+    expect(pinViews(w)[1].pullDir).toBe('up')
+    expect(pinViews(w)[0].pullDir).toBeNull()
+    expect(apply(w, setPinPull(w, 7, null)).pulls).toEqual([2])
+    // a direction a channel does not have on today's boards is kept as a map (a later board)
+    expect(canonicalPulls(new Map([[1, 'up'], [7, 'up']]))).toEqual({ '1': 'up', '7': 'up' })
+    expect(canonicalPulls(new Map([[8, 'down'], [1, 'up']]))).toEqual([1, 8])
+  })
+  it('reads the map form and checks it', () => {
+    expect(pullDirections([8, 1])).toEqual(new Map([[1, 'up'], [8, 'down']]))
+    expect(pullDirections({ '2': 'up', '8': 'down' })).toEqual(new Map([[2, 'up'], [8, 'down']]))
+    expect(pullDirections(null).size).toBe(0)
+    expect(coerceStoredWiring({ pulls: { '2': 'up', '8': 'down' } }).pulls).toEqual([2, 8])
+    expect(coerceStoredWiring({ pulls: { '7': 'up', '1': 'up' } }).pulls).toEqual([1])   // LA7 can't pull up today
+    expect(validateWiring({ pulls: { '1': 'up', '8': 'down' } }).errors).toEqual([])
+    expect(validateWiring({ pulls: { '7': 'up' } }).errors).toEqual([{ field: 'pulls.7', message: 'LA7 supports pull-down only on this board' }])
+    expect(validateWiring({ pulls: { '9': 'up' } }).errors.map((e) => e.field)).toEqual(['pulls.9'])
+    expect(validateWiring({ pulls: { '1': 'on' } }).errors.map((e) => e.field)).toEqual(['pulls.1'])
+    expect(validateWiring({ version: 2, i2c_sda: 7, pulls: { '7': 'down' } }).warnings.map((e) => e.field)).toEqual(['i2c_sda'])
+  })
+  it('takes the directions a pin can pull from the pod when it says', () => {
+    expect(pinPullDirs(LA_PULLS[0])).toEqual(['up'])
+    expect(pinPullDirs(LA_PULLS[0], { pull: 'up', pull_dirs: ['up', 'down'] })).toEqual(['up', 'down'])
+    expect(pinPullDirs(LA_PULLS[6], { pull: 'down' })).toEqual(['down'])   // older firmware
+    expect(pinPullDirs(LA_PULLS[9], { pull: null })).toEqual([])
+    expect(pullSwitchLabel(LA_PULLS[0], ['up', 'down'])).toBe('Pull-up/down (4.7k)')
   })
   it('warns about a pull-down under I2C only while it is on', () => {
     expect(validateWiring({ version: 2, i2c_sda: 7, pulls: [] }).warnings).toEqual([])

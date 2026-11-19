@@ -301,7 +301,7 @@ export function setupFromRows(rows: BusLogRow[], selected: ReadonlySet<number>, 
   const out: SequenceStep[] = []
   if (need.has('i2c') && st.i2c) {
     const { sda, scl, hz, pullups } = st.i2c
-    if (pullups === 'pod' && sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { las: [sda, scl], enabled: true }, proto: 'I2C', setup: true })
+    if (pullups === 'pod' && sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { las: [sda, scl], pull: 'up', enabled: true }, proto: 'I2C', setup: true })
     const args: Record<string, unknown> = {}
     if (sda !== undefined) args.sda = sda
     if (scl !== undefined) args.scl = scl
@@ -318,7 +318,7 @@ export function setupFromRows(rows: BusLogRow[], selected: ReadonlySet<number>, 
     if (open?.tool === 'i2c_open' && String(d.pullups ?? open.args?.pullups ?? 'pod') === 'pod') {
       const sda = num(d.sda) ?? open.args?.sda
       const scl = num(d.scl) ?? open.args?.scl
-      if (sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { las: [sda, scl], enabled: true }, proto: 'I2C', setup: true })
+      if (sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { las: [sda, scl], pull: 'up', enabled: true }, proto: 'I2C', setup: true })
     }
   }
   if (need.has('can') && st.can) out.push({ tool: 'can_open', args: { ...st.can }, proto: 'CAN', setup: true })

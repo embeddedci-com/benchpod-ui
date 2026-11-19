@@ -99,11 +99,13 @@ export type Wiring = {
    */
   dut_dirs: Record<string, WiringDutDir>
   /**
-   * The LA channels whose pull resistor is on (LA1-LA8 have one each, fixed up or down, see LA_PULLS).
-   * Powering the board on with the profile switches exactly these on and the other pull resistors
-   * off. null = the profile leaves the pull resistors as they are (profiles saved before this key).
+   * The pull resistors powering the board on switches on (the others off): a list of LA channels,
+   * each pulling its own direction (LA1-LA6 up, LA7/LA8 down on today's boards, see LA_PULLS), or a
+   * map of channel -> "up" / "down". pullDirections() reads either; setPinPull writes the list
+   * whenever every pull is its channel's own direction, so older readers keep working. null = the
+   * profile leaves the pull resistors as they are (profiles saved before this key).
    */
-  pulls: number[] | null
+  pulls: WiringPulls | null
   /**
    * The control loop's INPUT sense chain — what the ADC is actually wired to, so the loop can
    * be configured in the unit the bench measures instead of raw ADC codes. Lives here rather
@@ -181,22 +183,44 @@ export const WIRING_ROLE_LABELS: Record<WiringRole, string> = {
 export const LA_CHANNEL_COUNT = 14
 export const MAX_WIRING_SIGNALS = 14
 
-/** The fixed pull resistor on one LA channel. 3V3-referenced: unavailable while the bank is at 1.8 V. */
-export type LaPull = { la: number; dir: 'up' | 'down' | null; ohms: string | null }
+/** A pull direction a host asks for; the pod picks the resistor. */
+export type PullDir = 'up' | 'down'
+
+/** A profile's pulls as stored: channels pulling their own direction, or channel -> direction. */
+export type WiringPulls = number[] | Record<string, PullDir>
+
+/**
+ * The pull resistor on one LA channel: the directions it can pull (`dirs`), the one a plain "on"
+ * engages (`dir`) and its value. 3V3-referenced: unavailable while the bank is at 1.8 V. The pod
+ * reports the same per channel (la_pins `pull_dirs`), which wins when it is connected.
+ */
+export type LaPull = { la: number; dir: PullDir | null; dirs: PullDir[]; ohms: string | null }
+
+/**
+ * Today's boards (every v3 board; the firmware's la_pins.c has the same table): LA1-LA6 pull up,
+ * LA7/LA8 pull down, LA9-LA14 have none. A board revision with other resistors gets its own table.
+ */
+const PULL_TABLE_V3: Record<number, { dirs: PullDir[]; ohms: string }> = {
+  1: { dirs: ['up'], ohms: '4.7k' },
+  2: { dirs: ['up'], ohms: '4.7k' },
+  3: { dirs: ['up'], ohms: '2.2k' },
+  4: { dirs: ['up'], ohms: '2.2k' },
+  5: { dirs: ['up'], ohms: '10k' },
+  6: { dirs: ['up'], ohms: '10k' },
+  7: { dirs: ['down'], ohms: '10k' },
+  8: { dirs: ['down'], ohms: '10k' },
+}
 
 export const LA_PULLS: LaPull[] = Array.from({ length: LA_CHANNEL_COUNT }, (_, i) => {
   const la = i + 1
-  if (la <= 2) return { la, dir: 'up', ohms: '4.7k' }
-  if (la <= 4) return { la, dir: 'up', ohms: '2.2k' }
-  if (la <= 6) return { la, dir: 'up', ohms: '10k' }
-  if (la <= 8) return { la, dir: 'down', ohms: '10k' }
-  return { la, dir: null, ohms: null }
+  const hw = PULL_TABLE_V3[la]
+  return hw ? { la, dir: hw.dirs[0], dirs: hw.dirs, ohms: hw.ohms } : { la, dir: null, dirs: [], ohms: null }
 })
 
-/** "pull-up 4.7k", "pull-down 10k" or "none": the resistor on one LA channel. */
+/** "pull-up 4.7k", "pull-down 10k", "pull-up/down 10k" or "none": the resistor on one LA channel. */
 export function pullLabel(p: LaPull): string {
-  if (!p.dir) return 'none'
-  return `pull-${p.dir} ${p.ohms ?? ''}`.trim()
+  if (!p.dirs.length) return 'none'
+  return `pull-${p.dirs.join('/')} ${p.ohms ?? ''}`.trim()
 }
 
 export const WIRING_DEFAULTS: Wiring = {
@@ -312,6 +336,42 @@ export function normalizePulls(las: number[]): number[] {
   return [...new Set(las)].sort((a, b) => a - b)
 }
 
+function isPullDir(v: unknown): v is PullDir {
+  return v === 'up' || v === 'down'
+}
+
+/** Can LA `la`'s resistor pull `dir` (today's table)? */
+export function pullSupports(la: number, dir: PullDir): boolean {
+  return !!LA_PULLS[la - 1]?.dirs.includes(dir)
+}
+
+/** The profile's pulls as channel -> direction, from either stored form ({} for null). */
+export function pullDirections(pulls: WiringPulls | null | undefined): Map<number, PullDir> {
+  const out = new Map<number, PullDir>()
+  if (Array.isArray(pulls)) {
+    for (const la of normalizePulls(pulls)) {
+      const d = LA_PULLS[la - 1]?.dir
+      if (d) out.set(la, d)
+    }
+  } else if (pulls) {
+    for (const [k, v] of Object.entries(pulls)) {
+      const la = Number(k)
+      if (hasPullResistor(la) && isPullDir(v)) out.set(la, v)
+    }
+  }
+  return new Map([...out].sort((a, b) => a[0] - b[0]))
+}
+
+/**
+ * The stored form of channel -> direction: the list of channels when every pull is its channel's
+ * own direction (what every reader, old and new, takes), else the map.
+ */
+export function canonicalPulls(dirs: Map<number, PullDir>): WiringPulls {
+  const sorted = [...dirs].sort((a, b) => a[0] - b[0])
+  if (sorted.every(([la, d]) => LA_PULLS[la - 1]?.dir === d)) return sorted.map(([la]) => la)
+  return Object.fromEntries(sorted.map(([la, d]) => [String(la), d]))
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
@@ -336,6 +396,10 @@ export function coerceStoredWiring(remote: Record<string, unknown>): StoredWirin
     } else if (k === 'pulls') {
       if (v === null) out.pulls = null
       else if (Array.isArray(v)) out.pulls = normalizePulls(v.filter(hasPullResistor))
+      else if (isRecord(v))
+        out.pulls = canonicalPulls(
+          pullDirections(Object.fromEntries(Object.entries(v).filter(([k, d]) => isPullDir(d) && pullSupports(Number(k), d))) as Record<string, PullDir>),
+        )
     } else if (k === 'uart_parity') {
       if (v === 'none' || v === 'even' || v === 'odd') out[k] = v
     } else if (k === 'uart_stop_bits') {
@@ -456,18 +520,20 @@ function channelUsers(w: Wiring, skipFields: Set<string> = new Set()): ChannelUs
 function pullWarnings(w: Wiring): WiringFieldIssue[] {
   const out: WiringFieldIssue[] = []
   // null: the profile doesn't set the pulls, so a pull-down may be on.
-  const pullOn = (la: number) => w.pulls === null || w.pulls.includes(la)
+  const dirs = pullDirections(w.pulls)
+  const pullsDown = (la: number) => (w.pulls === null ? pullSupports(la, 'down') : dirs.get(la) === 'down')
   for (const role of ['i2c_sda', 'i2c_scl'] as const) {
     const la = w[role]
     if (!isLaChannel(la)) continue
-    if (la >= 9) out.push({ field: role, message: 'no pod pull-up on LA9-LA14; the bus needs external pull-ups' })
-    else if ((la === 7 || la === 8) && pullOn(la))
+    // The texts match the server's (wiring_profile.go wiringWarnings).
+    if (!LA_PULLS[la - 1]?.dirs.length) out.push({ field: role, message: 'no pod pull-up on LA9-LA14; the bus needs external pull-ups' })
+    else if (pullsDown(la))
       out.push({ field: role, message: 'LA7/LA8 have 10k pull-downs; keep them disabled on an open-drain bus' })
   }
-  if ((w.uart_rx === 7 || w.uart_rx === 8) && pullOn(w.uart_rx)) {
+  if (isLaChannel(w.uart_rx) && pullsDown(w.uart_rx)) {
     out.push({ field: 'uart_rx', message: 'LA7/LA8 have pull-downs; the UART idles high — keep the pull disabled' })
   }
-  if (w.la_mv === 1800 && w.pulls?.length)
+  if (w.la_mv === 1800 && dirs.size)
     out.push({ field: 'pulls', message: 'the pull resistors work at 3.3 V only: at 1.8 V they stay off' })
   return out
 }
@@ -566,12 +632,19 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
   }
 
   if (has('pulls') && raw.pulls !== null) {
-    const pulls = raw.pulls
-    if (!Array.isArray(pulls)) err('pulls', 'pulls must be a list of LA channels whose pull resistor is on, e.g. [1, 2]')
-    else
+    const pulls = raw.pulls as unknown
+    if (Array.isArray(pulls))
       pulls.forEach((la, i) => {
         if (!hasPullResistor(la)) err(`pulls[${i}]`, `pulls[${i}] must be an LA channel with a pull resistor (LA1-LA8), got ${JSON.stringify(la)}`)
       })
+    else if (isRecord(pulls))
+      Object.entries(pulls).forEach(([k, d]) => {
+        const la = Number(k)
+        if (!hasPullResistor(la)) err(`pulls.${k}`, `pulls.${k} must be an LA channel with a pull resistor (LA1-LA8)`)
+        else if (!isPullDir(d)) err(`pulls.${k}`, `pulls.${k} must be "up" or "down", got ${JSON.stringify(d)}`)
+        else if (!pullSupports(la, d)) err(`pulls.${k}`, `LA${la} supports pull-${LA_PULLS[la - 1].dir} only on this board`)
+      })
+    else err('pulls', 'pulls must be a list of LA channels (e.g. [1, 2]) or a map of channel to "up" or "down"')
   }
 
   if (has('dut_dirs')) {
@@ -643,10 +716,10 @@ export function laChannelLabel(w: Wiring, la: number): string {
   return names.length ? `LA${la} · ${names.join(' / ')}` : `LA${la}`
 }
 
-/** The fixed pull resistor as a short label: "4.7k pull-up", "10k pull-down", "no pull". */
+/** The pull resistor as a short label: "4.7k pull-up", "10k pull-down", "no pull". */
 export function laPullLabel(p: LaPull): string {
-  if (!p.dir) return 'no pull'
-  return `${p.ohms} pull-${p.dir}`
+  if (!p.dirs.length) return 'no pull'
+  return `${p.ohms} pull-${p.dirs.join('/')}`
 }
 
 /** Per-field inline error messages: the reported errors plus "LA4 is also used by …" for every user of a
