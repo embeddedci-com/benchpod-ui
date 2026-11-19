@@ -534,7 +534,7 @@ function pullWarnings(w: Wiring): WiringFieldIssue[] {
     out.push({ field: 'uart_rx', message: 'LA7/LA8 have pull-downs; the UART idles high — keep the pull disabled' })
   }
   if (w.la_mv === 1800 && dirs.size)
-    out.push({ field: 'pulls', message: 'the pull resistors work at 3.3 V only: at 1.8 V they stay off' })
+    out.push({ field: 'pulls', message: 'at 1.8 V the pull resistors need firmware newer than 3.10.12; older firmware leaves them off' })
   return out
 }
 
