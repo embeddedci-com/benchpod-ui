@@ -1,5 +1,5 @@
 import { benchData, type BenchCall } from '../../bench/benchCall'
-import { stepDiff, type SequenceStep } from './model'
+import { stepArgs, stepDiff, type SequenceStep } from './model'
 
 // Runs a saved sequence through the host's BenchCall, one step after the other, so every step
 // gets the same confirmations (and the same log rows) as a call made by hand.
@@ -23,7 +23,7 @@ export async function runSequence(
   const out: StepOutcome[] = steps.map(() => ({ status: 'skipped' }))
   for (let i = 0; i < steps.length; i++) {
     if (signal?.aborted) break
-    const r = await call(steps[i].tool, steps[i].args, { signal })
+    const r = await call(steps[i].tool, stepArgs(steps[i].tool, steps[i].args), { signal })
     let o: StepOutcome
     if (r.declined) o = { status: 'declined', note: r.text || 'not run' }
     else if (r.is_error || r.refused || r.confirm) o = { status: 'error', note: r.text || 'the call failed' }

@@ -76,8 +76,8 @@ const las = (v: unknown): string => {
   const list = (Array.isArray(v) ? v : [v]).filter((x) => typeof x === 'number') as number[]
   return list.length ? list.map((n) => `LA${n}`).join(list.length === 2 ? ' and ' : ', ') : 'the pins'
 }
-/** set_pull's direction: pull ("up" / "down" / "off"), else the older enabled flag. */
-const pullOf = (a: Record<string, unknown>): string => (typeof a.pull === 'string' ? a.pull : a.enabled === false ? 'off' : 'up')
+/** set_pull's direction: "up", "down" or "off". */
+const pullOf = (a: Record<string, unknown>): string => (typeof a.pull === 'string' ? a.pull : 'up')
 const addr = (v: unknown): string => (typeof v === 'number' ? hex(v) : String(v ?? ''))
 
 /**
@@ -88,8 +88,8 @@ export function describeCall(tool: string, a: Record<string, unknown>): string |
   switch (tool) {
     case 'set_pull':
       return pullOf(a) === 'off'
-        ? `Switch off the pull resistors on ${las(a.las ?? a.la)}?`
-        : `Pull ${las(a.las ?? a.la)} ${pullOf(a) === 'down' ? 'down' : 'up'}?`
+        ? `Switch off the pull resistors on ${las(a.la)}?`
+        : `Pull ${las(a.la)} ${pullOf(a) === 'down' ? 'down' : 'up'}?`
     case 'i2c_open':
       return `Open I2C on ${las(a.sda)} (SDA) and ${las(a.scl)} (SCL)${typeof a.hz === 'number' ? ` at ${a.hz / 1000} kHz` : ''}?`
     case 'i2c_close':

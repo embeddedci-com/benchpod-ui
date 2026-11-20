@@ -7,6 +7,7 @@ import { BusDashboard } from './BusDashboard'
 import { I2cTab, parseHexBytes, parseI2cAddr } from './I2cTab'
 import { SpiTab } from './SpiTab'
 import { CanTab, canDataOk, parseCanId } from './CanTab'
+import { GpioTab } from './GpioTab'
 import { captureArgs } from './sendCapture'
 import { i2cSendAgain, spiBursts } from './sendAgain'
 import { PinStrip, pinColumns, pinWarningCount, dirLabel, ownerLabel, pinWarningLines, pinWarnings, pullLabel, warnBits, type LaPin } from './PinStrip'
@@ -70,7 +71,7 @@ describe('busLog', () => {
   })
   it('scan and gpio_wait', () => {
     expect(logRow(1, 0, 'I2C', 'i2c_scan', {}, ok({ found: [0x48, 0x76], found_hex: ['0x48', '0x76'] }))).toMatchObject({ out: 'scan 0x08..0x77', in: '0x48 0x76', note: '2 devices' })
-    expect(logRow(1, 0, 'GPIO', 'gpio_wait', { la: 4, level: 1, timeout: 2 }, ok({ la: 4, level: 1, reached: false, waited: 2 }))).toMatchObject({ status: 'timeout' })
+    expect(logRow(1, 0, 'GPIO', 'gpio_wait', { la: 4, level: 1, timeout_s: 2 }, ok({ la: 4, level: 1, reached: false, waited: 2 }))).toMatchObject({ status: 'timeout' })
   })
   it('loggedCall skips polls and tools it is not asked to log', async () => {
     const rows: Omit<BusLogRow, 'id'>[] = []
@@ -183,7 +184,7 @@ describe('I2cTab', () => {
     await waitFor(() => expect(screen.getByTestId('i2c-session').textContent).toContain('open: SDA LA1, SCL LA2'))
     expect(screen.queryByText(/set_pull\(/)).toBeNull()
     expect(screen.getByTestId('i2c-pull-hint').textContent).toBe("The pod's pull-ups are on for LA1 and LA2.")
-    expect(seen.find((x) => x.tool === 'set_pull')?.args).toEqual({ las: [1, 2], pull: 'up', enabled: true })
+    expect(seen.find((x) => x.tool === 'set_pull')?.args).toEqual({ la: [1, 2], pull: 'up' })
     // one yes covers both: the open after the pull-ups goes as approved
     expect(seen.filter((x) => x.tool === 'i2c_open').map((x) => !!x.approved)).toEqual([false, true])
   })
@@ -274,6 +275,20 @@ describe('SpiTab', () => {
   })
 })
 
+describe('GpioTab', () => {
+  it('pulses and waits with the MCP 4.0 argument names (width_s, timeout_s)', async () => {
+    const { call, seen } = fake({
+      gpio_pulse: () => ok({}),
+      gpio_wait: () => ok({ la: 1, level: 1, reached: true, waited: 0.1 }),
+    })
+    wrap(<GpioTab call={call} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Pulse' }))
+    await waitFor(() => expect(seen.find((x) => x.tool === 'gpio_pulse')?.args).toEqual({ la: 1, width_s: 0.001, count: 1 }))
+    fireEvent.click(screen.getByRole('button', { name: 'Wait' }))
+    await waitFor(() => expect(seen.find((x) => x.tool === 'gpio_wait')?.args).toEqual({ la: 1, level: 1, timeout_s: 5 }))
+  })
+})
+
 describe('CanTab', () => {
   it('parses ids and data lengths', () => {
     expect(parseCanId('0x123', false)).toBe(0x123)
@@ -306,9 +321,16 @@ describe('CanTab', () => {
     expect(seen[1]).toMatchObject({ tool: 'can_write', args: { can_id: 0x18daf110, data: [2, 1, 13], ext: true } })
   })
 
+  it('reads with the MCP 4.0 argument names', async () => {
+    const { call, seen } = fake({ can_read: () => ok({ frames: [] }) })
+    wrap(<CanTab call={call} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Read' }))
+    await waitFor(() => expect(seen.find((x) => x.tool === 'can_read')?.args).toEqual({ timeout_s: 0 }))
+  })
+
   it('logs one row per frame read, and nothing for a poll that read none', () => {
     const frames = ok({ frames: [{ id: 0x7e8, data: [3, 0x41, 0x0d, 0x32], ext: false, rtr: false, ts_ms: 1200 }, { id: 0x18daf110, data: [], ext: true, rtr: true, ts_ms: 1210 }] })
-    const rows = logRows(0, 'CAN', 'can_read', { timeout: 0 }, frames, true)
+    const rows = logRows(0, 'CAN', 'can_read', { timeout_s: 0 }, frames, true)
     expect(rows.map((r) => r.in)).toEqual(['0x7E8 [4] 03 41 0d 32', '0x18DAF110 ext RTR'])
     expect(rows[0].note).toBe('received at 1200 ms')
     expect(logRows(0, 'CAN', 'can_read', {}, ok({ frames: [] }), true)).toEqual([])
@@ -372,7 +394,7 @@ describe('i2cSessionFromLog', () => {
 describe('send and capture', () => {
   it('sizes the capture for the transaction', () => {
     const i2c = captureArgs({ bus: 'i2c', addr: 0x76, write_hex: 'd0', read: 1 }, 100_000)
-    expect(i2c).toMatchObject({ sample_rate_hz: 1_000_000, trigger_timeout: 2 })
+    expect(i2c).toMatchObject({ sample_rate_hz: 1_000_000, trigger_timeout_s: 2 })
     expect(i2c.samples).toBeGreaterThanOrEqual(2048)
     const spi = captureArgs({ bus: 'spi', tx_hex: '9f000000', spi_mode: 0, spi_hz: 6_000_000 })
     expect(spi.sample_rate_hz).toBe(48_000_000)

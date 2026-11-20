@@ -66,7 +66,7 @@ export function GpioTab({
     if (l) setResult(`LA${ch} reads ${l.level}`)
   }
   const wait = async () => {
-    const r = await run<Wait>('wait', 'gpio_wait', { la: ch, level: Number(waitLevel), timeout: Number(timeout) || 0 })
+    const r = await run<Wait>('wait', 'gpio_wait', { la: ch, level: Number(waitLevel), timeout_s: Number(timeout) || 0 })
     if (r) setResult(r.reached ? `LA${ch} reached ${r.level} after ${fmtSi(r.waited, 's')}` : `LA${ch} was still not ${r.level} after ${fmtSi(r.waited, 's')}`)
   }
   const width = (Number(widthMs) || 0) / 1000
@@ -125,7 +125,7 @@ export function GpioTab({
       <Group gap="xs" align="flex-end" wrap="wrap">
         <NumberInput size="xs" w={104} label="Width (ms)" aria-label="Width (ms)" value={widthMs} onChange={(v) => setWidthMs(typeof v === 'number' ? v : '')} min={0.004} max={65.535} step={0.1} decimalScale={3} />
         <NumberInput size="xs" w={84} label="Count" aria-label="Count" value={count} onChange={(v) => setCount(typeof v === 'number' ? v : '')} min={1} max={65535} />
-        <Button size="xs" variant="light" onClick={() => void run('pulse', 'gpio_pulse', { la: ch, width, count: Number(count) || 1 })} loading={busy === 'pulse'} disabled={!!busy || !width}>
+        <Button size="xs" variant="light" onClick={() => void run('pulse', 'gpio_pulse', { la: ch, width_s: width, count: Number(count) || 1 })} loading={busy === 'pulse'} disabled={!!busy || !width}>
           Pulse
         </Button>
       </Group>

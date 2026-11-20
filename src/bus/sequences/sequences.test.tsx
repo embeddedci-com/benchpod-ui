@@ -7,7 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MantineProvider } from '@mantine/core'
 import type { BenchCall, BenchResult } from '../../bench/benchCall'
 import { logRow, type BusLogRow } from '../busLog'
-import { SEQUENCE_VERSION, stepDiff, stepFromRow, stepsFromRows, type BusSequence, type SequenceInput, type SequenceStep, type SequenceStore } from './model'
+import { SEQUENCE_VERSION, stepArgs, stepDiff, stepFromRow, stepsFromRows, type BusSequence, type SequenceInput, type SequenceStep, type SequenceStore } from './model'
 import { pyInt, pytestFileName, sequenceToPytest, slug } from './pytest'
 import { runSequence } from './run'
 import { httpSequenceStore } from './httpStore'
@@ -39,7 +39,7 @@ const NAMES = ['i2c_sda', 'i2c_scl', 'READY', '', 'LED', '', '', '', '', '', '',
 
 /** Every tool the export knows, as the dashboard logs them. */
 const ALL: SequenceStep[] = [
-  { tool: 'set_pull', args: { las: [1, 2], enabled: true } },
+  { tool: 'set_pull', args: { la: [1, 2], pull: 'up' } },
   { tool: 'i2c_open', args: { hz: 400000, pullups: 'pod' } },
   { tool: 'i2c_scan', args: { start: 8, end: 119 }, expect: { found: [0x76] } },
   { tool: 'i2c_transfer', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } },
@@ -52,14 +52,14 @@ const ALL: SequenceStep[] = [
   { tool: 'gpio_mode', args: { la: [5], mode: 'output', level: 0 } },
   { tool: 'gpio_write', args: { la: [5], level: 1 } },
   { tool: 'gpio_read', args: { la: [3] }, expect: { levels: [{ la: 3, level: 1 }] } },
-  { tool: 'gpio_wait', args: { la: 'READY', level: 1, timeout: 2 }, expect: { reached: true } },
-  { tool: 'gpio_pulse', args: { la: 5, width: 0.001, count: 3 } },
+  { tool: 'gpio_wait', args: { la: 'READY', level: 1, timeout_s: 2 }, expect: { reached: true } },
+  { tool: 'gpio_pulse', args: { la: 5, width_s: 0.001, count: 3 } },
   { tool: 'capture_la', args: { samples: 4096, send: { bus: 'gpio', la: 5, level: 0 } }, expect: { send_ok: true } },
   { tool: 'gpio_release', args: { la: [5] } },
   { tool: 'spi_transfer', args: { tx_hex: '9f000000', hz: 1000000, mode: 0 }, expect: { rx_hex: 'ffef4018' } },
   { tool: 'can_open', args: { bitrate: 500000, mode: 'normal', term: true } },
   { tool: 'can_write', args: { can_id: 0x123, data: [1, 2, 255], ext: false } },
-  { tool: 'can_read', args: { timeout: 0.5, max_frames: 8 }, expect: { frames: [{ id: 0x321, data: [0xaa] }] } },
+  { tool: 'can_read', args: { timeout_s: 0.5, max_frames: 8 }, expect: { frames: [{ id: 0x321, data: [0xaa] }] } },
   { tool: 'can_close', args: {} },
   { tool: 'uart_open', args: { baud: 115200 } },
   { tool: 'uart_write', args: { text: 'status "now"', line_ending: 'crlf' } },
@@ -136,7 +136,7 @@ describe('steps from log rows', () => {
     ]
     const all = stepsFromRows(rows, new Set([1, 2, 3, 4]))
     // The open was on the pod's pull-ups (the default) without a set_pull row: the setup switches them on.
-    expect(all[0]).toEqual({ tool: 'set_pull', args: { las: [1, 2], pull: 'up', enabled: true }, proto: 'I2C', setup: true })
+    expect(all[0]).toEqual({ tool: 'set_pull', args: { la: [1, 2], pull: 'up' }, proto: 'I2C', setup: true })
     const steps = all.filter((s) => !s.setup)
     expect(steps.map((s) => s.tool)).toEqual(['i2c_open', 'i2c_transfer'])
     expect(steps[1]).toEqual({ tool: 'i2c_transfer', proto: 'I2C', args: { addr: 0x76, write_hex: 'd0', read: 1 }, expect: { ack: true, rx_hex: '58' } })
@@ -171,18 +171,45 @@ describe('recorded setup (version 2)', () => {
     ]
   }
 
-  it('exports set_pull by direction, and the older enabled form', () => {
+  it('exports set_pull by direction, and the older las and enabled form', () => {
     const code = (args: Record<string, unknown>) => sequenceToPytest({ name: 'x', steps: [{ tool: 'set_pull', args }] }, { date: DATE })
-    expect(code({ las: [1, 2], pull: 'up', enabled: true })).toContain('bp.enable_pullup(1, 2)')
+    expect(code({ la: [1, 2], pull: 'up' })).toContain('bp.enable_pullup(1, 2)')
+    expect(code({ la: [7], pull: 'down' })).toContain('bp.enable_pulldown(7)')
+    expect(code({ la: [7], pull: 'off' })).toContain('bp.disable_pullup(7)')
     expect(code({ las: [7], pull: 'down', enabled: true })).toContain('bp.enable_pulldown(7)')
-    expect(code({ las: [7], pull: 'off', enabled: false })).toContain('bp.disable_pullup(7)')
+    expect(code({ las: [7], enabled: false })).toContain('bp.disable_pullup(7)')
     expect(code({ las: [1], enabled: true })).toContain('bp.enable_pullup(1)')
+  })
+
+  it('a sequence saved before MCP 4.0 runs and exports with the 4.0 argument names', async () => {
+    const old: SequenceStep[] = [
+      { tool: 'set_pull', args: { las: [1, 2], enabled: true } },
+      { tool: 'gpio_wait', args: { la: 3, level: 1, timeout: 2 } },
+      { tool: 'gpio_pulse', args: { la: 5, width: 0.001, count: 3 } },
+      { tool: 'can_read', args: { timeout: 0.5 } },
+      { tool: 'capture_la', args: { samples: 4096, trigger_timeout: 2, stop_dac_after: 0.1 } },
+    ]
+    expect(old.map((s) => stepArgs(s.tool, s.args))).toEqual([
+      { la: [1, 2], pull: 'up' },
+      { la: 3, level: 1, timeout_s: 2 },
+      { la: 5, width_s: 0.001, count: 3 },
+      { timeout_s: 0.5 },
+      { samples: 4096, trigger_timeout_s: 2, stop_dac_after_s: 0.1 },
+    ])
+    const sent: [string, Record<string, unknown> | undefined][] = []
+    await runSequence(async (tool, args) => (sent.push([tool, args]), ok({})), old)
+    expect(sent.map(([, a]) => a)).toEqual(old.map((s) => stepArgs(s.tool, s.args)))
+    const code = sequenceToPytest({ name: 'old', steps: old }, { date: DATE })
+    expect(code).toContain('timeout=2')
+    expect(code).toContain('delay=0.001')
+    expect(code).toContain('trigger_timeout=2')
+    expect(code).toContain('stop_dac_after=0.1')
   })
 
   it('carries an I2C session opened before the selection, with its pull-ups', () => {
     const steps = stepsFromRows(liveRows(), new Set([2, 3]))
     expect(steps.slice(0, 2)).toEqual([
-      { tool: 'set_pull', args: { las: [2, 1], pull: 'up', enabled: true }, proto: 'I2C', setup: true },
+      { tool: 'set_pull', args: { la: [2, 1], pull: 'up' }, proto: 'I2C', setup: true },
       { tool: 'i2c_open', args: { sda: 2, scl: 1, hz: 100000, pullups: 'pod' }, proto: 'I2C', setup: true },
     ])
     expect(steps.slice(2).map((s) => s.tool)).toEqual(['i2c_transfer', 'i2c_transfer'])

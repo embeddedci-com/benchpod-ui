@@ -24,7 +24,7 @@ type Status = {
     lan_policy?: string
     sig_policy?: string
     psram?: string
-    usb?: { setting?: string; link?: boolean; ip?: string; host_ip?: string }
+    usb?: { enabled?: boolean; link?: boolean; ip?: string; host_ip?: string }
     lan_tls?: { https_only?: boolean; sha256?: string }
   }
 }
@@ -79,7 +79,7 @@ export function PodSettings({ call, podCall, offline }: { call: BenchCall; podCa
 
   const fw = st?.firmware ?? {}
   const httpsOnly = !!fw.lan_tls?.https_only
-  const usbOn = fw.usb?.setting !== 'off'
+  const usbOn = fw.usb?.enabled !== false
 
   return (
     <Stack gap="sm" p="sm">
@@ -187,7 +187,7 @@ export function PodSettings({ call, podCall, offline }: { call: BenchCall; podCa
           disabled={!st || !!busy}
           onChange={(e) => {
             const on = e.currentTarget.checked
-            void run('USB network adapter', () => podCall('usb-network', { set: on ? 'on' : 'off' }), false)
+            void run('USB network adapter', () => podCall('usb-network', { enabled: on }), false)
           }}
         />
       </Group>
@@ -200,23 +200,21 @@ export function PodSettings({ call, podCall, offline }: { call: BenchCall; podCa
       </Text>
 
       <Divider label="Firmware signatures" labelPosition="left" />
-      <SegmentedControl
-        size="xs"
-        w="fit-content"
-        value={fw.sig_policy ?? 'audit'}
-        disabled={!st || !!busy}
-        onChange={(v) => void run('Signature policy', () => podCall('sig-policy', { set: v }), false)}
-        data={[
-          { value: 'audit', label: 'Audit' },
-          { value: 'permissive', label: 'Permissive' },
-          { value: 'required', label: 'Required' },
-        ]}
-      />
+      <Group gap="xs" align="center">
+        <Text size="sm" aria-label="Signature policy">
+          {fw.sig_policy ? fw.sig_policy[0].toUpperCase() + fw.sig_policy.slice(1) : '…'}
+        </Text>
+        {fw.sig_policy && fw.sig_policy !== 'required' ? (
+          <Button size="xs" variant="light" onClick={() => void run('Signature policy', () => podCall('sig-policy', { set: 'required' }), false)} loading={busy === 'Signature policy'} disabled={!st || !!busy}>
+            Require signatures
+          </Button>
+        ) : null}
+      </Group>
       <Text size="xs" c="dimmed">
         Which firmware images the pod accepts{' '}
         <HelpTip label="signature policy" docs="/docs/benchpod-firmware-update">
-          Audit accepts every image and reports its signature; Permissive refuses a bad signature; Required refuses
-          unsigned images too.
+          Required: the pod installs only signed images. Firmware 4.0 never loosens that; your own builds go in over
+          USB DFU.
         </HelpTip>
       </Text>
 

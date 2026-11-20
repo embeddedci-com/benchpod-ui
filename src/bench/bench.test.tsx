@@ -125,6 +125,7 @@ describe('FlashControls', () => {
     expect(await screen.findByText('flashed')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Power-cycle and show the boot log' }))
     expect((await screen.findByTestId('boot-note')).textContent).toContain('boot log is in the Console')
+    expect(seen.find((x) => x.tool === 'power_cycle_and_capture')?.args).toEqual({ duration_s: 4 })
     expect(seen.filter((x) => x.tool.startsWith('power_o')).map((x) => [x.tool, x.approved ?? false])).toEqual([['power_off', false], ['power_on', true]])
   })
 
@@ -242,10 +243,10 @@ describe('ConsoleTerminal one wire and boot entry', () => {
 
 describe('describeCall', () => {
   it('says what a confirmed call does in one sentence, or leaves it to the arguments', () => {
-    expect(describeCall('set_pull', { las: [2, 1], enabled: true })).toBe('Pull LA2 and LA1 up?')
-    expect(describeCall('set_pull', { las: [7], pull: 'down', enabled: true })).toBe('Pull LA7 down?')
-    expect(describeCall('set_pull', { las: [7], pull: 'off', enabled: false })).toBe('Switch off the pull resistors on LA7?')
-    expect(describeCall('set_pull', { las: [2, 1], enabled: false })).toBe('Switch off the pull resistors on LA2 and LA1?')
+    expect(describeCall('set_pull', { la: [2, 1], pull: 'up' })).toBe('Pull LA2 and LA1 up?')
+    expect(describeCall('set_pull', { la: [7], pull: 'down' })).toBe('Pull LA7 down?')
+    expect(describeCall('set_pull', { la: [7], pull: 'off' })).toBe('Switch off the pull resistors on LA7?')
+    expect(describeCall('set_pull', { la: [2, 1], pull: 'off' })).toBe('Switch off the pull resistors on LA2 and LA1?')
     expect(describeCall('i2c_open', { sda: 2, scl: 1, hz: 100000, pullups: 'pod' })).toBe('Open I2C on LA2 (SDA) and LA1 (SCL) at 100 kHz?')
     expect(describeCall('gpio_write', { la: 5, value: 1 })).toBe('Drive LA5 high?')
     expect(describeCall('flash', { file: '/f/x.elf', target: 'target/stm32f4x.cfg' })).toBe('Flash x.elf to the board over SWD?')
@@ -281,5 +282,27 @@ describe('EspFlashControls', () => {
     )
     render(<MantineProvider><EspFlashControls call={call} firmware={store} /></MantineProvider>)
     expect((await screen.findByTestId('esp-no-pins')).textContent).toContain('signal named BOOT')
+  })
+})
+
+describe('PodSettings (firmware 4.0)', () => {
+  it('sends usb-network as enabled, and offers only Required for signatures', async () => {
+    cleanup()
+    const { PodSettings } = await import('./PodSettings')
+    const status = { connection: 'usb', kind: 'usb_net', firmware: { version: '4.0.0', sig_policy: 'audit', usb: { enabled: true } } }
+    const call = vi.fn(async (): Promise<BenchResult> => ({ text: '', structured: status }))
+    const seen: [string, Record<string, unknown> | undefined][] = []
+    const podCall = vi.fn(async (tool: string, args?: Record<string, unknown>): Promise<BenchResult> => {
+      seen.push([tool, args])
+      return { text: 'ok' }
+    })
+    render(<MantineProvider><PodSettings call={call} podCall={podCall} /></MantineProvider>)
+    const usb = (await screen.findByLabelText('USB network adapter')) as HTMLInputElement
+    await waitFor(() => expect(usb.checked).toBe(true))
+    expect(screen.queryByText('Permissive')).toBeNull()
+    fireEvent.click(usb)
+    await waitFor(() => expect(seen[0]).toEqual(['usb-network', { enabled: false }]))
+    fireEvent.click(await screen.findByRole('button', { name: 'Require signatures' }))
+    await waitFor(() => expect(seen[1]).toEqual(['sig-policy', { set: 'required' }]))
   })
 })

@@ -88,7 +88,7 @@ export function CanTab({ call }: { call: BenchCall }) {
     const t = setInterval(() => {
       if (polling.current) return
       polling.current = true
-      void run('read', 'can_read', { timeout: 0 }, true).finally(() => {
+      void run('read', 'can_read', { timeout_s: 0 }, true).finally(() => {
         polling.current = false
       })
     }, CAN_POLL_MS)
@@ -165,7 +165,7 @@ export function CanTab({ call }: { call: BenchCall }) {
 
       <Divider label="Read" labelPosition="left" />
       <Group gap="xs" align="center" wrap="wrap">
-        <Button size="xs" variant="light" onClick={() => void run('read', 'can_read', { timeout: 0 })} loading={busy === 'read'} disabled={!!busy}>
+        <Button size="xs" variant="light" onClick={() => void run('read', 'can_read', { timeout_s: 0 })} loading={busy === 'read'} disabled={!!busy}>
           Read
         </Button>
         <Switch size="xs" label="Keep reading" aria-label="Keep reading" checked={keep} onChange={(e) => setKeep(e.currentTarget.checked)} />

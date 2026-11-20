@@ -118,7 +118,7 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
     setBusy('boot')
     setError(undefined)
     try {
-      const r = await call('power_cycle_and_capture', { duration: 4 })
+      const r = await call('power_cycle_and_capture', { duration_s: 4 })
       const e = benchError(r)
       // The console has the UART open: power-cycle, and the boot log shows in the console.
       if (e && /in use by uart/i.test(e)) {

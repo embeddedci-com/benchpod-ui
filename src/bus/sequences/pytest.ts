@@ -1,4 +1,4 @@
-import type { BusSequence, SequenceStep } from './model'
+import { stepArgs, type BusSequence, type SequenceStep } from './model'
 
 // A saved sequence as a pytest file for the embeddedci SDK (its pytest plugin gives the
 // `benchpod` fixture). Pure: the same input gives the same text, so the web app and the desktop
@@ -121,15 +121,14 @@ function ensure(ctx: Ctx, v: 'i2c' | 'can' | 'uart') {
 }
 
 function stepCode(ctx: Ctx, s: SequenceStep, n: number) {
-  const a = s.args ?? {}
+  const a = stepArgs(s.tool, s.args)
   const e = s.expect
   switch (s.tool) {
     case 'set_pull': {
       // enable_pullup takes channel numbers: a wiring name becomes its channel when the wiring has it.
-      const las = laList(a.las).map((x) => numbered(ctx, x))
+      const las = laList(a.la).map((x) => numbered(ctx, x))
       const list = las.map((x) => (typeof x === 'number' ? String(x) : `bp.wiring.la(${pyStr(String(x))})`)).join(', ')
-      // pull names the direction; enabled is the older form (true = up, the I2C pull-ups)
-      const dir = typeof a.pull === 'string' ? a.pull : a.enabled ? 'up' : 'off'
+      const dir = typeof a.pull === 'string' ? a.pull : 'up'
       const kind = dir === 'down' ? 'pulldown' : 'pullup'
       line(ctx, `bp.${dir === 'off' ? 'disable' : 'enable'}_${kind}(${list})${laComment(ctx, las)}`)
       // The pod keeps them on after the test: switch them off at the end, even when an assert fails.
@@ -221,13 +220,13 @@ function stepCode(ctx: Ctx, s: SequenceStep, n: number) {
     case 'gpio_pulse': {
       const opts = kw([
         ['steps', pyInt(Number(a.count ?? 1))],
-        ['delay', pyNum(Number(a.width))],
+        ['delay', pyNum(Number(a.width_s))],
       ])
-      line(ctx, `bp.la_step(${args(pyLa(a.la), opts)})  # ${Number(a.count ?? 1)} pulse(s), ${pyNum(Number(a.width))} s high${laComment(ctx, [a.la]).replace('  #', ',')}`)
+      line(ctx, `bp.la_step(${args(pyLa(a.la), opts)})  # ${Number(a.count ?? 1)} pulse(s), ${pyNum(Number(a.width_s))} s high${laComment(ctx, [a.la]).replace('  #', ',')}`)
       return
     }
     case 'gpio_wait': {
-      const call = `bp.wait_for_level(${args(pyLa(a.la), String(Number(a.level ?? 1)), `timeout=${pyNum(Number(a.timeout ?? 5))}`)})`
+      const call = `bp.wait_for_level(${args(pyLa(a.la), String(Number(a.level ?? 1)), `timeout=${pyNum(Number(a.timeout_s ?? 5))}`)})`
       line(ctx, `assert ${e?.reached === false ? 'not ' : ''}${call}${e?.reached === false ? '  # timed out when recorded' : ''}${laComment(ctx, [a.la])}`)
       return
     }
@@ -260,7 +259,7 @@ function stepCode(ctx: Ctx, s: SequenceStep, n: number) {
     }
     case 'can_read': {
       ensure(ctx, 'can')
-      const timeout = Number(a.timeout ?? 0)
+      const timeout = Number(a.timeout_s ?? 0)
       if (has(a, 'can_id')) {
         const v = `frame_${n}`
         line(ctx, `${v} = can.read_until(${pyHex(Number(a.can_id))}, timeout=${pyNum(timeout || 1)})`)
@@ -351,9 +350,9 @@ function captureCode(ctx: Ctx, a: Record<string, unknown>, s: SequenceStep, n: n
   if (trigger) ctx.imports.add('Trigger')
   const opts = kw([
     ['sample_rate_hz', has(a, 'sample_rate_hz') ? pyNum(Number(a.sample_rate_hz)) : undefined],
-    ['stop_dac_after', has(a, 'stop_dac_after') ? pyNum(Number(a.stop_dac_after)) : undefined],
+    ['stop_dac_after', has(a, 'stop_dac_after_s') ? pyNum(Number(a.stop_dac_after_s)) : undefined],
     ['trigger', trigger],
-    ['trigger_timeout', has(a, 'trigger_timeout') && Number(a.trigger_timeout) !== 10 ? pyNum(Number(a.trigger_timeout)) : undefined],
+    ['trigger_timeout', has(a, 'trigger_timeout_s') && Number(a.trigger_timeout_s) !== 10 ? pyNum(Number(a.trigger_timeout_s)) : undefined],
     ['send', sendExpr],
   ])
   const call = `${v} = bp.capture_la(${args(pyInt(Number(a.samples ?? 4096)), opts)})`
@@ -377,7 +376,7 @@ export function sequenceToPytest(seq: Pick<BusSequence, 'name' | 'steps'>, opts:
   const date = (opts.date ?? new Date()).toISOString().slice(0, 10)
   const sessions = seq.steps.some((s) =>
     ['i2c_open', 'i2c_transfer', 'i2c_scan', 'can_open', 'can_read', 'uart_open', 'uart_write'].includes(s.tool) ||
-    (s.tool === 'set_pull' && !!s.args?.enabled) ||
+    (s.tool === 'set_pull' && stepArgs(s.tool, s.args).pull !== 'off') ||
     (s.tool === 'capture_la' && (s.args?.send as { bus?: string } | undefined)?.bus === 'i2c'),
   )
   const ctx: Ctx = { out: [], ind: IND + (sessions ? IND : ''), names, imports: new Set(), open: new Set(), stack: sessions }

@@ -118,7 +118,7 @@ export function ConsoleTerminal({
     let alive = true
     const loop = async () => {
       while (alive) {
-        const r = await call('uart_read', { timeout: READ_TIMEOUT_S }, { poll: true })
+        const r = await call('uart_read', { timeout_s: READ_TIMEOUT_S }, { poll: true })
         if (r.is_error || r.refused) {
           if (alive) await new Promise((res) => setTimeout(res, 1000))
         }
