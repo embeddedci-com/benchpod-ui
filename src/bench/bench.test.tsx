@@ -284,3 +284,25 @@ describe('EspFlashControls', () => {
     expect((await screen.findByTestId('esp-no-pins')).textContent).toContain('signal named BOOT')
   })
 })
+
+describe('PodSettings (firmware 4.0)', () => {
+  it('sends usb-network as enabled, and offers only Required for signatures', async () => {
+    cleanup()
+    const { PodSettings } = await import('./PodSettings')
+    const status = { connection: 'usb', kind: 'usb_net', firmware: { version: '4.0.0', sig_policy: 'audit', usb: { enabled: true } } }
+    const call = vi.fn(async (): Promise<BenchResult> => ({ text: '', structured: status }))
+    const seen: [string, Record<string, unknown> | undefined][] = []
+    const podCall = vi.fn(async (tool: string, args?: Record<string, unknown>): Promise<BenchResult> => {
+      seen.push([tool, args])
+      return { text: 'ok' }
+    })
+    render(<MantineProvider><PodSettings call={call} podCall={podCall} /></MantineProvider>)
+    const usb = (await screen.findByLabelText('USB network adapter')) as HTMLInputElement
+    await waitFor(() => expect(usb.checked).toBe(true))
+    expect(screen.queryByText('Permissive')).toBeNull()
+    fireEvent.click(usb)
+    await waitFor(() => expect(seen[0]).toEqual(['usb-network', { enabled: false }]))
+    fireEvent.click(await screen.findByRole('button', { name: 'Require signatures' }))
+    await waitFor(() => expect(seen[1]).toEqual(['sig-policy', { set: 'required' }]))
+  })
+})
