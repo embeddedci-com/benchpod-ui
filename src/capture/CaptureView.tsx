@@ -97,6 +97,12 @@ const PROTOCOLS = [
   { value: 'uart', label: 'UART' },
   { value: 'i2c', label: 'I2C' },
   { value: 'spi', label: 'SPI' },
+  { value: 'usb', label: 'USB' },
+]
+const USB_SPEEDS = [
+  { value: 'auto', label: 'auto' },
+  { value: 'full', label: 'full' },
+  { value: 'low', label: 'low' },
 ]
 const CHANNELS = Array.from({ length: 14 }, (_, i) => i + 1)
 const CH_OPTIONS = CHANNELS.map((c) => ({ value: String(c), label: `LA${c}` }))
@@ -153,6 +159,7 @@ export function CaptureView({
   const [ch, setCh] = useState<Record<string, string | null>>({})
   const [baud, setBaud] = useState<number | ''>('')
   const [spiMode, setSpiMode] = useState('0')
+  const [usbSpeed, setUsbSpeed] = useState('auto')
   const [decoded, setDecoded] = useState<DecodeData | null>(null)
   const [overlay, setOverlay] = useState(true)
 
@@ -170,6 +177,8 @@ export function CaptureView({
         mosi: roleChannel(w, 'spi_mosi'),
         miso: roleChannel(w, 'spi_miso'),
         cs: roleChannel(w, 'spi_cs'),
+        dp: roleChannel(w, 'usb_dp'),
+        dm: roleChannel(w, 'usb_dm'),
       })
       if (w.uart_baud) setBaud(w.uart_baud)
     })
@@ -242,6 +251,7 @@ export function CaptureView({
       const args: Record<string, unknown> = { protocol, capture: 'last', max_items: 1 }
       if (protocol === 'i2c') Object.assign(args, { sda: n('sda'), scl: n('scl') })
       else if (protocol === 'uart') Object.assign(args, { rx: n('rx'), baud: baud || undefined })
+      else if (protocol === 'usb') Object.assign(args, { dp: n('dp'), dm: n('dm'), speed: usbSpeed })
       else Object.assign(args, { sclk: n('sclk'), mosi: n('mosi'), miso: n('miso'), cs: n('cs'), mode: Number(spiMode) })
       for (const k of Object.keys(args)) if (args[k] === undefined) delete args[k]
       const r = await call('decode_la', args)
@@ -261,7 +271,7 @@ export function CaptureView({
   const annotations = useMemo(() => {
     if (!result || !overlay) return []
     const c = result.channels ?? {}
-    return decodeAnnotations(result, { sda: c.sda, rx: c.rx, mosi: c.mosi, miso: c.miso })
+    return decodeAnnotations(result, { sda: c.sda, rx: c.rx, mosi: c.mosi, miso: c.miso, dp: c.dp })
   }, [result, overlay])
 
   const chSelect = (key: string, label: string) => (
@@ -364,6 +374,13 @@ export function CaptureView({
                   chSelect('miso', 'MISO'),
                   chSelect('cs', 'CS'),
                   <Select key="mode" size="xs" w={70} label="Mode" data={['0', '1', '2', '3']} value={spiMode} onChange={(v) => v && setSpiMode(v)} allowDeselect={false} />,
+                ]
+              : null}
+            {protocol === 'usb'
+              ? [
+                  chSelect('dp', 'D+'),
+                  chSelect('dm', 'D-'),
+                  <Select key="speed" size="xs" w={80} label="Speed" data={USB_SPEEDS} value={usbSpeed} onChange={(v) => v && setUsbSpeed(v)} allowDeselect={false} />,
                 ]
               : null}
             <Button size="xs" variant="light" onClick={() => void decode()} loading={busy}>
