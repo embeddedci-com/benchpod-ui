@@ -95,7 +95,7 @@ function outText(tool: string, a: Record<string, unknown>): string {
     case 'i2c_scan':
       return `scan ${hex2(Number(a.start ?? 0x08))}..${hex2(Number(a.end ?? 0x77))}`
     case 'set_pull':
-      return a.pull === 'down' ? `pull-downs on ${pins(a.las)}` : `pull-ups ${a.pull ? (a.pull === 'off' ? 'off' : 'on') : a.enabled ? 'on' : 'off'} ${pins(a.las)}`
+      return a.pull === 'down' ? `pull-downs on ${pins(a.la)}` : `pull-ups ${a.pull === 'off' ? 'off' : 'on'} ${pins(a.la)}`
     case 'gpio_mode':
       return `${pins(a.la)} ${a.mode ?? 'output'}${a.level !== undefined ? ` at ${a.level}` : ''}`
     case 'gpio_write':
@@ -103,9 +103,9 @@ function outText(tool: string, a: Record<string, unknown>): string {
     case 'gpio_read':
       return `read ${pins(a.la)}`
     case 'gpio_pulse':
-      return `${pins(a.la)} ${a.count ?? 1} x ${fmtSi(Number(a.width), 's')}`
+      return `${pins(a.la)} ${a.count ?? 1} x ${fmtSi(Number(a.width_s), 's')}`
     case 'gpio_wait':
-      return `${pins(a.la)} wait for ${a.level ?? 1} (up to ${a.timeout ?? 5} s)`
+      return `${pins(a.la)} wait for ${a.level ?? 1} (up to ${a.timeout_s ?? 5} s)`
     case 'gpio_release':
       return `release ${pins(a.la)}`
     case 'spi_transfer': {

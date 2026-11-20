@@ -121,7 +121,7 @@ export function GeneratorControls({ call, library }: { call: BenchCall; library?
         amplitude: toWire(Number(amp)),
         offset: toWire(Number(offset)),
         dac_path: output,
-        ...(duration ? { duration: Number(duration) } : {}),
+        ...(duration ? { duration_s: Number(duration) } : {}),
       }),
     )
 

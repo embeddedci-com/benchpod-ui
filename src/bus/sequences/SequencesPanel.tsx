@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActionIcon, Alert, Badge, Button, Checkbox, Group, Menu, Modal, Paper, Stack, Text, TextInput, Textarea, Tooltip } from '@mantine/core'
 import type { BenchCall } from '../../bench/benchCall'
-import { SEQUENCE_VERSION, type BusSequence, type SequenceStep, type SequenceStore } from './model'
+import { SEQUENCE_VERSION, stepArgs, type BusSequence, type SequenceStep, type SequenceStore } from './model'
 import { pytestFileName, sequenceToPytest } from './pytest'
 import { runSequence, type StepOutcome } from './run'
 
@@ -24,7 +24,7 @@ export function stepLabel(s: SequenceStep): string {
 }
 
 function callLabel(s: SequenceStep): string {
-  const a = s.args ?? {}
+  const a = stepArgs(s.tool, s.args)
   const hex = (v: unknown) => String(v ?? '').replace(/\s+/g, '').match(/../g)?.join(' ') ?? ''
   const addr = (v: unknown) => `0x${Number(v).toString(16).padStart(2, '0')}`
   switch (s.tool) {
@@ -40,7 +40,7 @@ function callLabel(s: SequenceStep): string {
     case 'i2c_close':
       return 'I2C close'
     case 'set_pull':
-      return `pull-ups ${a.enabled ? 'on' : 'off'} ${[a.las].flat().map((x) => (typeof x === 'number' ? `LA${x}` : String(x))).join(', ')}`
+      return `pull-${a.pull === 'down' ? 'downs' : 'ups'} ${a.pull === 'off' ? 'off' : 'on'} ${[a.la].flat().map((x) => (typeof x === 'number' ? `LA${x}` : String(x))).join(', ')}`
     case 'capture_la': {
       const send = a.send as { bus?: string } | undefined
       return send?.bus ? `capture with an ${send.bus.toUpperCase()} send` : 'capture'

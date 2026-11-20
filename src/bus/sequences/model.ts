@@ -98,6 +98,43 @@ export const SEQUENCE_TOOLS = new Set([
   'capture_la',
 ])
 
+/** Argument names a sequence saved before MCP 4.0 used, per tool: the old name and the 4.0 one. */
+const RENAMED_ARGS: Record<string, [string, string][]> = {
+  gpio_pulse: [['width', 'width_s']],
+  gpio_wait: [['timeout', 'timeout_s']],
+  can_read: [['timeout', 'timeout_s']],
+  capture_la: [
+    ['trigger_timeout', 'trigger_timeout_s'],
+    ['stop_dac_after', 'stop_dac_after_s'],
+  ],
+}
+
+/**
+ * A step's arguments with the MCP 4.0 names. Sequences saved before 4.0 keep the older names
+ * (set_pull's las and enabled, timeout, width); a run, the list and the export read them through
+ * this, so they work unchanged.
+ */
+export function stepArgs(tool: string, args: Record<string, unknown> | undefined): Record<string, unknown> {
+  const a: Record<string, unknown> = { ...(args ?? {}) }
+  for (const [old, now] of RENAMED_ARGS[tool] ?? []) {
+    if (old in a) {
+      if (!(now in a)) a[now] = a[old]
+      delete a[old]
+    }
+  }
+  if (tool === 'set_pull') {
+    if ('las' in a) {
+      if (!('la' in a)) a.la = a.las
+      delete a.las
+    }
+    if ('enabled' in a) {
+      if (typeof a.pull !== 'string') a.pull = a.enabled ? 'up' : 'off'
+      delete a.enabled
+    }
+  }
+  return a
+}
+
 /** The log's bus for a tool, so a run's rows land under the right protocol. */
 export function toolProto(tool: string, args?: Record<string, unknown>): 'i2c' | 'spi' | 'can' | 'gpio' | 'uart' {
   if (tool === 'capture_la') {
@@ -301,7 +338,7 @@ export function setupFromRows(rows: BusLogRow[], selected: ReadonlySet<number>, 
   const out: SequenceStep[] = []
   if (need.has('i2c') && st.i2c) {
     const { sda, scl, hz, pullups } = st.i2c
-    if (pullups === 'pod' && sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { las: [sda, scl], pull: 'up', enabled: true }, proto: 'I2C', setup: true })
+    if (pullups === 'pod' && sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { la: [sda, scl], pull: 'up' }, proto: 'I2C', setup: true })
     const args: Record<string, unknown> = {}
     if (sda !== undefined) args.sda = sda
     if (scl !== undefined) args.scl = scl
@@ -318,7 +355,7 @@ export function setupFromRows(rows: BusLogRow[], selected: ReadonlySet<number>, 
     if (open?.tool === 'i2c_open' && String(d.pullups ?? open.args?.pullups ?? 'pod') === 'pod') {
       const sda = num(d.sda) ?? open.args?.sda
       const scl = num(d.scl) ?? open.args?.scl
-      if (sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { las: [sda, scl], pull: 'up', enabled: true }, proto: 'I2C', setup: true })
+      if (sda !== undefined && scl !== undefined) out.push({ tool: 'set_pull', args: { la: [sda, scl], pull: 'up' }, proto: 'I2C', setup: true })
     }
   }
   if (need.has('can') && st.can) out.push({ tool: 'can_open', args: { ...st.can }, proto: 'CAN', setup: true })

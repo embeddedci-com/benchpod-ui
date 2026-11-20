@@ -179,7 +179,7 @@ export function I2cTab({
     try {
       // pull names the direction (embeddedci-mcp 3.0.3+); enabled is the older form, which an older
       // MCP server reads and a newer one ignores when pull is given.
-      const r = await call('set_pull', { las, pull: on ? 'up' : 'off', enabled: on })
+      const r = await call('set_pull', { la: las, pull: on ? 'up' : 'off' })
       const e = benchError(r)
       if (e) setError(e)
       const ok = !e && !r.declined

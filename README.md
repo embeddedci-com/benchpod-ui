@@ -26,7 +26,10 @@ The chat speaks the protocol of the `chat` Go package in benchpod-desktop
 The bench controls (`src/bench/`: power, a console terminal, the generator with a waveform library, flashing a file and an SPI flash chip, updating the pod's own firmware, the pod's settings and calibration; `src/capture/`: the capture view; `src/wiring/`: the wiring profile model and editor) drive the pod by hand beside the chat.
 They take a `BenchCall`: `useBenchCall(base)` posts to the host's tool endpoint, which runs the
 BenchPod MCP tool under the same policy as the agent and answers `confirm` for a call that needs
-the user's yes (`src/bench/benchCall.tsx` describes the protocol). Pass them to `ChatView` as
+the user's yes (`src/bench/benchCall.tsx` describes the protocol). Every call uses the tool and
+argument names of embeddedci-mcp 4.0 (`timeout_s`, `duration_s`, `set_pull(la=[...], pull=)`, ...):
+the host runs MCP 4, or translates them for an older one. Saved bus sequences with the older names
+still run (`stepArgs` in `src/bus/sequences/model.ts`). Pass them to `ChatView` as
 `panelControls`. The console terminal also reads the host's console log, which holds the agent's
 UART traffic as well (`src/bench/ConsoleTerminal.tsx`).
 

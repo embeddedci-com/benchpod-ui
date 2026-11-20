@@ -69,5 +69,5 @@ export function captureArgs(send: SendSpec, hz?: number): Record<string, unknown
     seconds = ((send.tx_hex.length / 2) * 8) / f + 20e-6
   }
   const samples = Math.max(MIN_SAMPLES, Math.ceil(seconds * rate) + SEND_PRE_SAMPLES)
-  return { samples, sample_rate_hz: rate, trigger_timeout: SEND_TRIGGER_TIMEOUT_S, send }
+  return { samples, sample_rate_hz: rate, trigger_timeout_s: SEND_TRIGGER_TIMEOUT_S, send }
 }

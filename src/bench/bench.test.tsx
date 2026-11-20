@@ -125,6 +125,7 @@ describe('FlashControls', () => {
     expect(await screen.findByText('flashed')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Power-cycle and show the boot log' }))
     expect((await screen.findByTestId('boot-note')).textContent).toContain('boot log is in the Console')
+    expect(seen.find((x) => x.tool === 'power_cycle_and_capture')?.args).toEqual({ duration_s: 4 })
     expect(seen.filter((x) => x.tool.startsWith('power_o')).map((x) => [x.tool, x.approved ?? false])).toEqual([['power_off', false], ['power_on', true]])
   })
 
@@ -242,10 +243,10 @@ describe('ConsoleTerminal one wire and boot entry', () => {
 
 describe('describeCall', () => {
   it('says what a confirmed call does in one sentence, or leaves it to the arguments', () => {
-    expect(describeCall('set_pull', { las: [2, 1], enabled: true })).toBe('Pull LA2 and LA1 up?')
-    expect(describeCall('set_pull', { las: [7], pull: 'down', enabled: true })).toBe('Pull LA7 down?')
-    expect(describeCall('set_pull', { las: [7], pull: 'off', enabled: false })).toBe('Switch off the pull resistors on LA7?')
-    expect(describeCall('set_pull', { las: [2, 1], enabled: false })).toBe('Switch off the pull resistors on LA2 and LA1?')
+    expect(describeCall('set_pull', { la: [2, 1], pull: 'up' })).toBe('Pull LA2 and LA1 up?')
+    expect(describeCall('set_pull', { la: [7], pull: 'down' })).toBe('Pull LA7 down?')
+    expect(describeCall('set_pull', { la: [7], pull: 'off' })).toBe('Switch off the pull resistors on LA7?')
+    expect(describeCall('set_pull', { la: [2, 1], pull: 'off' })).toBe('Switch off the pull resistors on LA2 and LA1?')
     expect(describeCall('i2c_open', { sda: 2, scl: 1, hz: 100000, pullups: 'pod' })).toBe('Open I2C on LA2 (SDA) and LA1 (SCL) at 100 kHz?')
     expect(describeCall('gpio_write', { la: 5, value: 1 })).toBe('Drive LA5 high?')
     expect(describeCall('flash', { file: '/f/x.elf', target: 'target/stm32f4x.cfg' })).toBe('Flash x.elf to the board over SWD?')
