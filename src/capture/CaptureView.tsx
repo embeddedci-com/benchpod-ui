@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Chip, Group, MultiSelect, NumberInput, Select, Stack, Switch, Text } from '@mantine/core'
+import { Alert, Button, Checkbox, Chip, Group, MultiSelect, NumberInput, Select, Stack, Switch, Text } from '@mantine/core'
 import { CaptureCanvas, useCanvasColors, type LaEdge } from './CaptureCanvas'
-import { DecodeTable, decodeAnnotations, type DecodeResult, type DecodeRowActions } from './DecodeTables'
+import { DecodeTable, decodeAnnotations, decodeRateNeed, type DecodeResult, type DecodeRowActions } from './DecodeTables'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
 import { fmtSi } from '../results/AdcEnvelope'
 
@@ -107,6 +107,11 @@ const PROTOCOLS = [
   { value: 'smbus', label: 'SMBus' },
   { value: 'pmbus', label: 'PMBus' },
 ]
+const PEC_OPTIONS = [
+  { value: 'auto', label: 'auto' },
+  { value: 'on', label: 'on' },
+  { value: 'off', label: 'off' },
+]
 const USB_SPEEDS = [
   { value: 'auto', label: 'auto' },
   { value: 'full', label: 'full' },
@@ -118,6 +123,12 @@ const CH_OPTIONS = CHANNELS.map((c) => ({ value: String(c), label: `LA${c}` }))
 const MAX_SAMPLES = 8_000_000
 
 type Wiring = { uart_baud?: number; pins?: { la: number; wired_to?: string | null }[] }
+
+/** The first channel whose signal name matches, for decoders the wiring has no role for. */
+function namedChannel(w: Wiring | null, re: RegExp, skip?: string | null): string | null {
+  const p = w?.pins?.find((x) => x.wired_to && re.test(x.wired_to) && String(x.la) !== skip)
+  return p ? String(p.la) : null
+}
 
 function roleChannel(w: Wiring | null, role: string): string | null {
   const p = w?.pins?.find((x) => x.wired_to === role)
@@ -171,6 +182,8 @@ export function CaptureView({
   const [bitrate, setBitrate] = useState<number | ''>(500000)
   const [dataBitrate, setDataBitrate] = useState<number | ''>('')
   const [pwmChannels, setPwmChannels] = useState<string[]>(['1'])
+  const [servo, setServo] = useState(false)
+  const [pec, setPec] = useState('auto')
   const [decoded, setDecoded] = useState<DecodeData | null>(null)
   const [overlay, setOverlay] = useState(true)
 
@@ -188,8 +201,11 @@ export function CaptureView({
         mosi: roleChannel(w, 'spi_mosi'),
         miso: roleChannel(w, 'spi_miso'),
         cs: roleChannel(w, 'spi_cs'),
-        dp: roleChannel(w, 'usb_dp'),
-        dm: roleChannel(w, 'usb_dm'),
+        dp: roleChannel(w, 'usb_dp') ?? namedChannel(w, /^(usb[_ -]?)?(d\+|dp|dplus)$/i),
+        dm: roleChannel(w, 'usb_dm') ?? namedChannel(w, /^(usb[_ -]?)?(d-|dm|dminus)$/i),
+        can: namedChannel(w, /can.*(rx|rxd)|^rxd$/i),
+        onewire: namedChannel(w, /1[-_ ]?wire|onewire|^ow$/i),
+        tx: roleChannel(w, 'uart_tx') ?? namedChannel(w, /modbus.*tx|rs-?485.*(di|tx)|\btx\b/i, roleChannel(w, 'uart_rx')),
       })
       if (w.uart_baud) setBaud(w.uart_baud)
     })
@@ -265,9 +281,9 @@ export function CaptureView({
       else if (protocol === 'usb') Object.assign(args, { dp: n('dp'), dm: n('dm'), speed: usbSpeed })
       else if (protocol === 'modbus') Object.assign(args, { rx: n('rx'), tx: n('tx'), baud: baud || undefined })
       else if (protocol === 'can') Object.assign(args, { can: n('can'), bitrate: bitrate || undefined, data_bitrate: dataBitrate || undefined })
-      else if (protocol === 'pwm') Object.assign(args, { channels: pwmChannels.map(Number) })
+      else if (protocol === 'pwm') Object.assign(args, { channels: pwmChannels.map(Number), servo })
       else if (protocol === 'onewire') Object.assign(args, { onewire: n('onewire') })
-      else if (protocol === 'smbus' || protocol === 'pmbus') Object.assign(args, { sda: n('sda'), scl: n('scl') })
+      else if (protocol === 'smbus' || protocol === 'pmbus') Object.assign(args, { sda: n('sda'), scl: n('scl'), pec })
       else Object.assign(args, { sclk: n('sclk'), mosi: n('mosi'), miso: n('miso'), cs: n('cs'), mode: Number(spiMode) })
       for (const k of Object.keys(args)) if (args[k] === undefined) delete args[k]
       const r = await call('decode_la', args)
@@ -290,13 +306,34 @@ export function CaptureView({
     return decodeAnnotations(result, { sda: c.sda, rx: c.rx, mosi: c.mosi, miso: c.miso, dp: c.dp, can: c.can, onewire: c.onewire })
   }, [result, overlay])
 
+  const chOptions = useMemo(() => CHANNELS.map((c) => ({ value: String(c), label: laNames[c - 1] ? `LA${c} ${laNames[c - 1]}` : `LA${c}` })), [laNames])
+  // The capture rate the chosen decoder needs: a capture that is too slow says so before Decode,
+  // and the rate menu can be set to the lowest rate that is enough for the next capture.
+  const rateHint = useMemo(() => {
+    const need = decodeRateNeed(protocol, {
+      baud: typeof baud === 'number' ? baud : undefined,
+      bitrate: typeof bitrate === 'number' ? bitrate : undefined,
+      dataBitrate: typeof dataBitrate === 'number' ? dataBitrate : undefined,
+      speed: usbSpeed,
+    })
+    if (!need) return null
+    const name = PROTOCOLS.find((p) => p.value === protocol)?.label ?? protocol
+    const enough = LA_RATES.map((r) => Number(r.value)).find((r) => r >= need)
+    const what = protocol === 'usb' && usbSpeed !== 'low' ? `${name} full speed` : name
+    const low = protocol === 'usb' && usbSpeed === 'auto' ? ' Low speed: 6 MS/s.' : ''
+    if (la && la.sample_rate_hz < need * 0.99)
+      return { text: `${what} needs ${fmtSi(need, 'S/s')} or more: this capture is ${fmtSi(la.sample_rate_hz, 'S/s')}.${low}`, use: enough && Number(laRate) < need ? enough : undefined }
+    if (Number(laRate) < need * 0.99) return { text: `${what} needs ${fmtSi(need, 'S/s')} or more for the next capture.${low}`, use: enough }
+    return null
+  }, [protocol, baud, bitrate, dataBitrate, usbSpeed, la, laRate])
+
   const chSelect = (key: string, label: string) => (
     <Select
       key={key}
       size="xs"
-      w={92}
+      w={120}
       label={label}
-      data={CH_OPTIONS}
+      data={chOptions}
       value={ch[key] ?? null}
       onChange={(v) => setCh((o) => ({ ...o, [key]: v }))}
       clearable={key === 'cs' || key === 'mosi' || key === 'miso' || key === 'tx'}
@@ -375,7 +412,7 @@ export function CaptureView({
       {showLa ? (
         <Stack gap={6}>
           <Group gap="xs" align="flex-end" wrap="wrap">
-            <Select size="xs" w={84} label="Decode" data={PROTOCOLS} value={protocol} onChange={(v) => v && setProtocol(v)} allowDeselect={false} />
+            <Select size="xs" w={96} label="Decode" data={PROTOCOLS} value={protocol} onChange={(v) => v && setProtocol(v)} allowDeselect={false} maxDropdownHeight={400} />
             {protocol === 'i2c' ? [chSelect('sda', 'SDA'), chSelect('scl', 'SCL')] : null}
             {protocol === 'uart'
               ? [
@@ -392,7 +429,13 @@ export function CaptureView({
                   <Select key="mode" size="xs" w={70} label="Mode" data={['0', '1', '2', '3']} value={spiMode} onChange={(v) => v && setSpiMode(v)} allowDeselect={false} />,
                 ]
               : null}
-            {protocol === 'smbus' || protocol === 'pmbus' ? [chSelect('sda', 'SDA'), chSelect('scl', 'SCL')] : null}
+            {protocol === 'smbus' || protocol === 'pmbus'
+              ? [
+                  chSelect('sda', 'SDA'),
+                  chSelect('scl', 'SCL'),
+                  <Select key="pec" size="xs" w={80} label="PEC" data={PEC_OPTIONS} value={pec} onChange={(v) => v && setPec(v)} allowDeselect={false} />,
+                ]
+              : null}
             {protocol === 'modbus'
               ? [
                   chSelect('rx', 'RX'),
@@ -408,7 +451,10 @@ export function CaptureView({
                 ]
               : null}
             {protocol === 'pwm' ? (
-              <MultiSelect key="pwm" size="xs" w={220} label="Channels" data={CH_OPTIONS} value={pwmChannels} onChange={setPwmChannels} comboboxProps={{ withinPortal: true }} />
+              <Group key="pwm" gap="xs" align="flex-end">
+                <MultiSelect size="xs" w={260} label="Channels" data={chOptions} value={pwmChannels} onChange={setPwmChannels} comboboxProps={{ withinPortal: true }} />
+                <Checkbox size="xs" label="Servo" checked={servo} onChange={(e) => setServo(e.currentTarget.checked)} mb={6} />
+              </Group>
             ) : null}
             {protocol === 'onewire' ? chSelect('onewire', 'Data') : null}
             {protocol === 'usb'
@@ -423,6 +469,18 @@ export function CaptureView({
             </Button>
             {result ? <Switch size="xs" label="On the waveform" checked={overlay} onChange={(e) => setOverlay(e.currentTarget.checked)} /> : null}
           </Group>
+          {rateHint ? (
+            <Alert color="yellow" variant="light" p="xs">
+              <Group gap="xs" wrap="nowrap" justify="space-between">
+                <Text size="xs">{rateHint.text}</Text>
+                {rateHint.use ? (
+                  <Button size="compact-xs" variant="light" color="yellow" onClick={() => setLaRate(String(rateHint.use))}>
+                    Use {fmtSi(rateHint.use, 'S/s')}
+                  </Button>
+                ) : null}
+              </Group>
+            </Alert>
+          ) : null}
           {result ? <DecodeTable result={result} actions={decodeActions} /> : null}
         </Stack>
       ) : null}

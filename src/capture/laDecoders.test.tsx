@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
-import { DecodeTable, decodeAnnotations, type DecodeResult } from './DecodeTables'
+import { DecodeTable, decodeAnnotations, decodeRateNeed, type DecodeResult } from './DecodeTables'
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -34,7 +34,7 @@ const can: DecodeResult = {
 const pwm: DecodeResult = {
   protocol: 'pwm',
   channels: [
-    { channel: 2, count: 2, freq_hz: stat(50), period_us: stat(20000), duty: stat(0.075), high_us: stat(1500), low_us: stat(18500), jitter_us: 0.5, glitches: 1, servo: { pulse_ms: stat(1.5), position_pct: stat(50) }, truncated: false,
+    { channel: 2, count: 50, freq_hz: stat(50), period_us: stat(20000), duty: stat(0.075), high_us: stat(1500), low_us: stat(18500), jitter_us: 0.5, glitches: 1, servo: { pulse_ms: stat(1.5), position_pct: stat(50) }, truncated: false,
       periods: [{ index: 1, start_us: 1000, period_us: 20000, freq_hz: 50, high_us: 1500, low_us: 18500, duty: 0.075 }] },
     { channel: 3, count: 0, level: 1, freq_hz: stat(0), period_us: stat(0), duty: stat(0), high_us: stat(0), low_us: stat(0), jitter_us: 0, glitches: 0, periods: [], truncated: false },
   ],
@@ -80,5 +80,26 @@ describe('LA decoder tables', () => {
     expect(screen.getByText('READ_VOUT')).toBeTruthy()
     expect(screen.getByText('3 V')).toBeTruthy()
     expect(screen.getByText('PEC OK')).toBeTruthy()
+  })
+
+  it('shows why a row failed, not only in a tooltip', () => {
+    wrap(modbus)
+    expect(screen.getByText('bad CRC')).toBeTruthy()
+  })
+  it('puts Modbus labels on the line each frame was on', () => {
+    const two: DecodeResult = { protocol: 'modbus', frames: (modbus as { frames: object[] }).frames.map((f, k) => ({ ...f, line: k === 0 ? 8 : 7 })) } as DecodeResult
+    expect(decodeAnnotations(two, { rx: 7 }).map((a) => a.ch)).toEqual([8, 7])
+  })
+  it('PWM: a channel with a stray period or two is not measured', () => {
+    const stray: DecodeResult = { protocol: 'pwm', channels: [{ ...(pwm as { channels: object[] }).channels[0], channel: 1, count: 1, servo: undefined, periods: [] }] } as unknown as DecodeResult
+    wrap(stray)
+    expect(screen.getByText(/1 period \(20\.000 ms\): too few to measure/)).toBeTruthy()
+  })
+  it('knows the capture rate each decoder needs', () => {
+    expect(decodeRateNeed('usb')).toBe(48e6)
+    expect(decodeRateNeed('usb', { speed: 'low' })).toBe(6e6)
+    expect(decodeRateNeed('can', { bitrate: 500e3, dataBitrate: 2e6 })).toBe(12e6)
+    expect(decodeRateNeed('modbus', { baud: 19200 })).toBe(192000)
+    expect(decodeRateNeed('i2c')).toBeUndefined()
   })
 })

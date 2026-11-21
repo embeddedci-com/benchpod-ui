@@ -120,6 +120,8 @@ export type ModbusFrame = {
   crc: string
   reply_to?: number
   response_us?: number
+  /** The LA channel the frame was on. */
+  line?: number
   ok: boolean
   error?: string
 }
@@ -248,13 +250,22 @@ function Frame({ accent, minWidth, children }: { accent: string; minWidth: numbe
   )
 }
 
+/** A status badge; a failed row also shows why, under the badge (a tooltip alone is easy to miss). */
 function Status({ ok, label, tip }: { ok: boolean; label: string; tip?: string }) {
   const b = (
     <Badge size="sm" variant="light" color={ok ? 'green' : 'red'}>
       {label}
     </Badge>
   )
-  return tip ? <Tooltip label={tip}>{b}</Tooltip> : b
+  if (ok || !tip) return b
+  return (
+    <Box>
+      <Tooltip label={tip}>{b}</Tooltip>
+      <Text size="xs" c="red" mt={2} style={{ lineHeight: 1.2 }}>
+        {tip}
+      </Text>
+    </Box>
+  )
 }
 
 /** One decoded I2C transaction per row (address / direction / register / data / status). */
@@ -666,6 +677,9 @@ export function CanTable({ frames, accent = DECODE_ACCENT.can }: { frames: CanFr
   )
 }
 
+/** Fewer periods than this are a stray pulse or two, not a signal to measure. */
+const PWM_MIN_PERIODS = 3
+
 /** PWM: a summary per channel, then its periods. */
 export function PwmTable({ channels, accent = DECODE_ACCENT.pwm }: { channels: PwmChannel[]; accent?: string }) {
   const [open, setOpen] = useState<number | null>(null)
@@ -689,7 +703,11 @@ export function PwmTable({ channels, accent = DECODE_ACCENT.pwm }: { channels: P
             {channels.map((c) => (
               <Table.Tr key={c.channel} onClick={() => setOpen(c.count ? c.channel : null)} style={{ cursor: c.count ? 'pointer' : undefined }}>
                 <Table.Td fw={600}>LA{c.channel}</Table.Td>
-                {c.count ? (
+                {c.count > 0 && c.count < PWM_MIN_PERIODS ? (
+                  <Table.Td colSpan={6} c="dimmed">
+                    {c.count === 1 ? '1 period' : `${c.count} periods`} ({usLabel(c.period_us.mean)}): too few to measure
+                  </Table.Td>
+                ) : c.count ? (
                   <>
                     <Table.Td ff="monospace">
                       {fmtNum(c.freq_hz.mean)} Hz{' '}
@@ -902,7 +920,8 @@ export function decodeAnnotations(
     for (const p of result.packets) out.push({ ch: ch.dp, startUs: p.start_us, endUs: p.end_us, label: usbChip(p), color: DECODE_ACCENT.usb })
   } else if (result.protocol === 'modbus') {
     if (!ch.rx) return out
-    for (const f of result.frames) out.push({ ch: ch.rx, startUs: f.start_us, endUs: f.end_us, label: `${f.addr} ${f.function_name}${f.ok ? '' : ' !'}`, color: DECODE_ACCENT.modbus })
+    for (const f of result.frames)
+      out.push({ ch: f.line || ch.rx, startUs: f.start_us, endUs: f.end_us, label: `${f.addr} ${f.function_name}${f.ok ? '' : ' !'}`, color: DECODE_ACCENT.modbus })
   } else if (result.protocol === 'can') {
     if (!ch.can) return out
     for (const f of result.frames) out.push({ ch: ch.can, startUs: f.start_us, endUs: f.end_us, label: f.kind === 'error' ? 'error frame' : `${f.id_hex} [${f.len}]${f.ok ? '' : ' !'}`, color: DECODE_ACCENT.can })
@@ -933,4 +952,29 @@ export function usbChip(p: UsbPacket): string {
   if (p.addr !== undefined) return `${p.pid} ${p.addr}.${p.endpoint}${err}`
   if (p.data_hex !== undefined) return `${p.pid} [${p.data_hex ? p.data_hex.split(' ').length : 0}]${err}`
   return `${p.pid ?? '?'}${err}`
+}
+
+/** Options that change the capture rate a decoder needs. */
+export type DecodeRateOptions = { baud?: number; bitrate?: number; dataBitrate?: number; speed?: string }
+
+/**
+ * The lowest capture rate (samples/s) a decode of `protocol` is reliable at, or undefined when it
+ * depends on a clock the decoder follows (I2C, SPI) or on nothing (PWM).
+ */
+export function decodeRateNeed(protocol: string, o: DecodeRateOptions = {}): number | undefined {
+  switch (protocol) {
+    case 'usb':
+      return o.speed === 'low' ? 6e6 : 48e6
+    case 'can': {
+      const top = Math.max(o.bitrate || 0, o.dataBitrate || 0)
+      return top ? 6 * top : undefined
+    }
+    case 'uart':
+    case 'modbus':
+      return o.baud ? 10 * o.baud : undefined
+    case 'onewire':
+      return 1e6
+    default:
+      return undefined
+  }
 }
