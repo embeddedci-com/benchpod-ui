@@ -300,7 +300,10 @@ export function CaptureView({
   // An ADC capture drawn with an LA capture shares its time axis only when one trigger took both.
   const showAdc = !!adc && (!la || mode !== 'la' || !!adc.correlated)
   const showLa = !!la && (!adc || mode !== 'adc' || !!la.correlated)
-  const result = decoded && decoded.seq === la?.seq && decoded.protocol ? (decoded as DecodeResult & DecodeData) : null
+  // The decode shown is the last one of this capture, for the protocol the picker is on: picking
+  // another protocol hides the old table until Decode.
+  const result =
+    decoded && decoded.seq === la?.seq && decoded.protocol && decoded.protocol === protocol ? (decoded as DecodeResult & DecodeData) : null
   const annotations = useMemo(() => {
     if (!result || !overlay) return []
     const c = (Array.isArray(result.channels) ? {} : result.channels ?? {}) as Record<string, number>
@@ -332,7 +335,7 @@ export function CaptureView({
     <Select
       key={key}
       size="xs"
-      w={120}
+      w={150}
       label={label}
       data={chOptions}
       value={ch[key] ?? null}
