@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Chip, Group, NumberInput, Select, Stack, Switch, Text } from '@mantine/core'
+import { Alert, Button, Chip, Group, MultiSelect, NumberInput, Select, Stack, Switch, Text } from '@mantine/core'
 import { CaptureCanvas, useCanvasColors, type LaEdge } from './CaptureCanvas'
 import { DecodeTable, decodeAnnotations, type DecodeResult, type DecodeRowActions } from './DecodeTables'
 import { benchData, benchError, type BenchCall } from '../bench/benchCall'
@@ -36,8 +36,10 @@ export type AdcCaptureData = {
 export type DecodeData = {
   seq: number
   protocol?: string
-  channels?: Record<string, number>
+  /** The decode's channel assignment (a PWM decode: its measured channels). */
+  channels?: Record<string, number> | unknown[]
   transactions?: unknown[]
+  packets?: unknown[]
   frames?: unknown[]
 }
 
@@ -98,6 +100,12 @@ const PROTOCOLS = [
   { value: 'i2c', label: 'I2C' },
   { value: 'spi', label: 'SPI' },
   { value: 'usb', label: 'USB' },
+  { value: 'modbus', label: 'Modbus' },
+  { value: 'can', label: 'CAN' },
+  { value: 'pwm', label: 'PWM' },
+  { value: 'onewire', label: '1-Wire' },
+  { value: 'smbus', label: 'SMBus' },
+  { value: 'pmbus', label: 'PMBus' },
 ]
 const USB_SPEEDS = [
   { value: 'auto', label: 'auto' },
@@ -160,6 +168,9 @@ export function CaptureView({
   const [baud, setBaud] = useState<number | ''>('')
   const [spiMode, setSpiMode] = useState('0')
   const [usbSpeed, setUsbSpeed] = useState('auto')
+  const [bitrate, setBitrate] = useState<number | ''>(500000)
+  const [dataBitrate, setDataBitrate] = useState<number | ''>('')
+  const [pwmChannels, setPwmChannels] = useState<string[]>(['1'])
   const [decoded, setDecoded] = useState<DecodeData | null>(null)
   const [overlay, setOverlay] = useState(true)
 
@@ -200,7 +211,7 @@ export function CaptureView({
         return l
       })
       setAdc((old) => (!a.seq ? null : old?.seq === a.seq ? old : a))
-      const dec = d.seq && (d.transactions || d.frames) ? d : null
+      const dec = d.seq && (d.transactions || d.frames || d.packets || (d.protocol === 'pwm' && d.channels)) ? d : null
       setDecoded(dec)
       // A decode made elsewhere (the agent, the bus console): the picker shows its protocol.
       if (dec?.protocol && PROTOCOLS.some((x) => x.value === dec.protocol)) setProtocol(dec.protocol)
@@ -252,6 +263,11 @@ export function CaptureView({
       if (protocol === 'i2c') Object.assign(args, { sda: n('sda'), scl: n('scl') })
       else if (protocol === 'uart') Object.assign(args, { rx: n('rx'), baud: baud || undefined })
       else if (protocol === 'usb') Object.assign(args, { dp: n('dp'), dm: n('dm'), speed: usbSpeed })
+      else if (protocol === 'modbus') Object.assign(args, { rx: n('rx'), tx: n('tx'), baud: baud || undefined })
+      else if (protocol === 'can') Object.assign(args, { can: n('can'), bitrate: bitrate || undefined, data_bitrate: dataBitrate || undefined })
+      else if (protocol === 'pwm') Object.assign(args, { channels: pwmChannels.map(Number) })
+      else if (protocol === 'onewire') Object.assign(args, { onewire: n('onewire') })
+      else if (protocol === 'smbus' || protocol === 'pmbus') Object.assign(args, { sda: n('sda'), scl: n('scl') })
       else Object.assign(args, { sclk: n('sclk'), mosi: n('mosi'), miso: n('miso'), cs: n('cs'), mode: Number(spiMode) })
       for (const k of Object.keys(args)) if (args[k] === undefined) delete args[k]
       const r = await call('decode_la', args)
@@ -270,8 +286,8 @@ export function CaptureView({
   const result = decoded && decoded.seq === la?.seq && decoded.protocol ? (decoded as DecodeResult & DecodeData) : null
   const annotations = useMemo(() => {
     if (!result || !overlay) return []
-    const c = result.channels ?? {}
-    return decodeAnnotations(result, { sda: c.sda, rx: c.rx, mosi: c.mosi, miso: c.miso, dp: c.dp })
+    const c = (Array.isArray(result.channels) ? {} : result.channels ?? {}) as Record<string, number>
+    return decodeAnnotations(result, { sda: c.sda, rx: c.rx, mosi: c.mosi, miso: c.miso, dp: c.dp, can: c.can, onewire: c.onewire })
   }, [result, overlay])
 
   const chSelect = (key: string, label: string) => (
@@ -283,7 +299,7 @@ export function CaptureView({
       data={CH_OPTIONS}
       value={ch[key] ?? null}
       onChange={(v) => setCh((o) => ({ ...o, [key]: v }))}
-      clearable={key === 'cs' || key === 'mosi' || key === 'miso'}
+      clearable={key === 'cs' || key === 'mosi' || key === 'miso' || key === 'tx'}
       comboboxProps={{ withinPortal: true }}
     />
   )
@@ -376,6 +392,25 @@ export function CaptureView({
                   <Select key="mode" size="xs" w={70} label="Mode" data={['0', '1', '2', '3']} value={spiMode} onChange={(v) => v && setSpiMode(v)} allowDeselect={false} />,
                 ]
               : null}
+            {protocol === 'smbus' || protocol === 'pmbus' ? [chSelect('sda', 'SDA'), chSelect('scl', 'SCL')] : null}
+            {protocol === 'modbus'
+              ? [
+                  chSelect('rx', 'RX'),
+                  chSelect('tx', 'TX'),
+                  <NumberInput key="baud" size="xs" w={96} label="Baud" value={baud} onChange={(v) => setBaud(typeof v === 'number' ? v : '')} min={300} max={4_000_000} hideControls />,
+                ]
+              : null}
+            {protocol === 'can'
+              ? [
+                  chSelect('can', 'RXD'),
+                  <NumberInput key="br" size="xs" w={100} label="Bit rate" value={bitrate} onChange={(v) => setBitrate(typeof v === 'number' ? v : '')} min={10_000} max={5_000_000} hideControls />,
+                  <NumberInput key="dbr" size="xs" w={100} label="FD data rate" value={dataBitrate} onChange={(v) => setDataBitrate(typeof v === 'number' ? v : '')} min={10_000} max={12_000_000} hideControls />,
+                ]
+              : null}
+            {protocol === 'pwm' ? (
+              <MultiSelect key="pwm" size="xs" w={220} label="Channels" data={CH_OPTIONS} value={pwmChannels} onChange={setPwmChannels} comboboxProps={{ withinPortal: true }} />
+            ) : null}
+            {protocol === 'onewire' ? chSelect('onewire', 'Data') : null}
             {protocol === 'usb'
               ? [
                   chSelect('dp', 'D+'),

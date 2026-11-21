@@ -102,11 +102,116 @@ export type UsbDecode = {
   error_count: number
 }
 
+/** One Modbus RTU frame (request or response). */
+export type ModbusFrame = {
+  index: number
+  start_us: number
+  end_us: number
+  role: string
+  addr: number
+  function: number
+  function_name: string
+  exception?: string
+  start?: number
+  quantity?: number
+  values?: number[]
+  summary: string
+  data_hex: string
+  crc: string
+  reply_to?: number
+  response_us?: number
+  ok: boolean
+  error?: string
+}
+
+/** One CAN or CAN FD frame; kind data, remote or error. */
+export type CanFrame = {
+  index: number
+  start_us: number
+  end_us: number
+  kind: string
+  id: number
+  id_hex: string
+  extended: boolean
+  fd: boolean
+  brs: boolean
+  esi: boolean
+  dlc: number
+  len: number
+  data_hex: string
+  crc: string
+  ack: boolean
+  stuff_bits: number
+  ok: boolean
+  error?: string
+}
+
+export type PwmStat = { min: number; max: number; mean: number }
+export type PwmPeriod = { index: number; start_us: number; period_us: number; freq_hz: number; high_us: number; low_us: number; duty: number }
+/** One measured channel: a summary, then one row per period. */
+export type PwmChannel = {
+  channel: number
+  count: number
+  level?: number
+  freq_hz: PwmStat
+  period_us: PwmStat
+  duty: PwmStat
+  high_us: PwmStat
+  low_us: PwmStat
+  jitter_us: number
+  glitches: number
+  servo?: { pulse_ms: PwmStat; position_pct: PwmStat }
+  periods: PwmPeriod[]
+  truncated: boolean
+}
+
+/** Everything from one 1-Wire reset to the next. */
+export type OneWireTransaction = {
+  index: number
+  start_us: number
+  end_us: number
+  reset: boolean
+  presence: boolean
+  overdrive: boolean
+  rom_command?: number
+  rom_command_name?: string
+  rom?: string
+  rom_crc_ok?: boolean
+  function?: string
+  bytes_hex: string
+  detail?: string
+  ok: boolean
+  error?: string
+}
+
+/** One SMBus or PMBus transaction. */
+export type SmbusTransaction = {
+  index: number
+  start_us: number
+  end_us: number
+  addr: number
+  addr_hex: string
+  kind: string
+  command?: number
+  command_name?: string
+  data_hex: string
+  value?: string
+  pec: string
+  ok: boolean
+  error?: string
+}
+
 export type DecodeResult =
   | { protocol: 'i2c'; transactions: DecodeTransaction[] }
   | { protocol: 'uart'; frames: UartFrame[] }
   | { protocol: 'spi'; frames: SpiFrame[] }
   | UsbDecode
+  | { protocol: 'modbus'; frames: ModbusFrame[] }
+  | { protocol: 'can'; frames: CanFrame[] }
+  | { protocol: 'pwm'; channels: PwmChannel[] }
+  | { protocol: 'onewire'; transactions: OneWireTransaction[] }
+  | { protocol: 'smbus'; transactions: SmbusTransaction[] }
+  | { protocol: 'pmbus'; transactions: SmbusTransaction[] }
 
 const EMPTY = '—'
 
@@ -122,11 +227,17 @@ const tableProps = {
 const usLabel = (us: number) => (us < 1000 ? `${us.toFixed(1)} µs` : `${(us / 1000).toFixed(3)} ms`)
 
 /** Per-protocol accent, shared by the waveform chips and the table's left border. */
-export const DECODE_ACCENT: Record<'i2c' | 'uart' | 'spi' | 'usb', string> = {
+export const DECODE_ACCENT: Record<'i2c' | 'uart' | 'spi' | 'usb' | 'modbus' | 'can' | 'pwm' | 'onewire' | 'smbus' | 'pmbus', string> = {
   i2c: '#1c7ed6',
   uart: '#0ca678',
   spi: '#7048e8',
   usb: '#e8590c',
+  modbus: '#2f9e44',
+  can: '#c2255c',
+  pwm: '#f08c00',
+  onewire: '#1098ad',
+  smbus: '#4263eb',
+  pmbus: '#4263eb',
 }
 
 function Frame({ accent, minWidth, children }: { accent: string; minWidth: number; children: React.ReactNode }) {
@@ -455,18 +566,326 @@ export function UsbTable({ result, accent = DECODE_ACCENT.usb }: { result: UsbDe
   )
 }
 
+/** Rows a table draws at most. */
+const MAX_ROWS = 2000
+
+const fmtNum = (v: number, digits = 4) => (Number.isFinite(v) ? Number(v.toPrecision(digits)).toLocaleString() : EMPTY)
+
+function Rows<T>({ rows, children }: { rows: T[]; children: (rows: T[]) => ReactNode }) {
+  return (
+    <>
+      {children(rows.slice(0, MAX_ROWS))}
+      {rows.length > MAX_ROWS ? (
+        <Text size="xs" c="dimmed" mt={4}>
+          First {MAX_ROWS} of {rows.length} rows.
+        </Text>
+      ) : null}
+    </>
+  )
+}
+
+/** Modbus RTU frames: request, response, what it read or wrote. */
+export function ModbusTable({ frames, accent = DECODE_ACCENT.modbus }: { frames: ModbusFrame[]; accent?: string }) {
+  return (
+    <Rows rows={frames}>
+      {(rows) => (
+        <Frame accent={accent} minWidth={620}>
+          <Table {...tableProps}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th style={{ width: 48 }}>#</Table.Th>
+                <Table.Th style={{ width: 100 }}>Time</Table.Th>
+                <Table.Th style={{ width: 90 }}>Role</Table.Th>
+                <Table.Th style={{ width: 56 }}>Addr</Table.Th>
+                <Table.Th>Frame</Table.Th>
+                <Table.Th style={{ width: 100 }}>Reply</Table.Th>
+                <Table.Th style={{ width: 90 }}>Status</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((f) => (
+                <Table.Tr key={f.index}>
+                  <Table.Td>{f.index}</Table.Td>
+                  <Table.Td ff="monospace">{usLabel(f.start_us)}</Table.Td>
+                  <Table.Td>{f.role}</Table.Td>
+                  <Table.Td ff="monospace">{f.addr}</Table.Td>
+                  <Table.Td ff="monospace" fw={600}>
+                    {f.summary}
+                  </Table.Td>
+                  <Table.Td ff="monospace">{f.reply_to ? `#${f.reply_to} +${usLabel(f.response_us ?? 0)}` : EMPTY}</Table.Td>
+                  <Table.Td>{f.ok ? <Status ok label={f.exception ? 'exception' : 'OK'} /> : <Status ok={false} label="error" tip={f.error} />}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Frame>
+      )}
+    </Rows>
+  )
+}
+
+/** CAN and CAN FD frames. */
+export function CanTable({ frames, accent = DECODE_ACCENT.can }: { frames: CanFrame[]; accent?: string }) {
+  return (
+    <Rows rows={frames}>
+      {(rows) => (
+        <Frame accent={accent} minWidth={620}>
+          <Table {...tableProps}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th style={{ width: 48 }}>#</Table.Th>
+                <Table.Th style={{ width: 100 }}>Time</Table.Th>
+                <Table.Th style={{ width: 110 }}>ID</Table.Th>
+                <Table.Th style={{ width: 90 }}>Type</Table.Th>
+                <Table.Th style={{ width: 48 }}>Len</Table.Th>
+                <Table.Th>Data</Table.Th>
+                <Table.Th style={{ width: 90 }}>Status</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((f) => (
+                <Table.Tr key={f.index}>
+                  <Table.Td>{f.index}</Table.Td>
+                  <Table.Td ff="monospace">{usLabel(f.start_us)}</Table.Td>
+                  <Table.Td ff="monospace" fw={600}>
+                    {f.id_hex}
+                  </Table.Td>
+                  <Table.Td>
+                    {f.kind === 'data' ? (f.fd ? (f.brs ? 'FD BRS' : 'FD') : f.extended ? 'ext' : 'base') : f.kind}
+                  </Table.Td>
+                  <Table.Td ff="monospace">{f.kind === 'error' ? EMPTY : f.len}</Table.Td>
+                  <Table.Td ff="monospace">{clipHex(f.data_hex, f.len)}</Table.Td>
+                  <Table.Td>{f.ok ? <Status ok label="ACK" /> : <Status ok={false} label="error" tip={f.error} />}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Frame>
+      )}
+    </Rows>
+  )
+}
+
+/** PWM: a summary per channel, then its periods. */
+export function PwmTable({ channels, accent = DECODE_ACCENT.pwm }: { channels: PwmChannel[]; accent?: string }) {
+  const [open, setOpen] = useState<number | null>(null)
+  const shown = channels.find((c) => c.channel === open)
+  return (
+    <Box>
+      <Frame accent={accent} minWidth={620}>
+        <Table {...tableProps}>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th style={{ width: 64 }}>Channel</Table.Th>
+              <Table.Th>Frequency</Table.Th>
+              <Table.Th>Duty</Table.Th>
+              <Table.Th>High</Table.Th>
+              <Table.Th style={{ width: 90 }}>Jitter</Table.Th>
+              <Table.Th style={{ width: 90 }}>Periods</Table.Th>
+              <Table.Th>Servo</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {channels.map((c) => (
+              <Table.Tr key={c.channel} onClick={() => setOpen(c.count ? c.channel : null)} style={{ cursor: c.count ? 'pointer' : undefined }}>
+                <Table.Td fw={600}>LA{c.channel}</Table.Td>
+                {c.count ? (
+                  <>
+                    <Table.Td ff="monospace">
+                      {fmtNum(c.freq_hz.mean)} Hz{' '}
+                      <Text span c="dimmed" size="xs">
+                        ({fmtNum(c.freq_hz.min)}-{fmtNum(c.freq_hz.max)})
+                      </Text>
+                    </Table.Td>
+                    <Table.Td ff="monospace">
+                      {(100 * c.duty.mean).toFixed(2)} %{' '}
+                      <Text span c="dimmed" size="xs">
+                        ({(100 * c.duty.min).toFixed(1)}-{(100 * c.duty.max).toFixed(1)})
+                      </Text>
+                    </Table.Td>
+                    <Table.Td ff="monospace">{usLabel(c.high_us.mean)}</Table.Td>
+                    <Table.Td ff="monospace">{usLabel(c.jitter_us)}</Table.Td>
+                    <Table.Td ff="monospace">
+                      {c.count}
+                      {c.glitches ? (
+                        <Text span c="orange" size="xs">
+                          {' '}
+                          {c.glitches} glitches
+                        </Text>
+                      ) : null}
+                    </Table.Td>
+                    <Table.Td ff="monospace">{c.servo ? `${c.servo.pulse_ms.mean.toFixed(3)} ms, ${c.servo.position_pct.mean.toFixed(1)} %` : EMPTY}</Table.Td>
+                  </>
+                ) : (
+                  <Table.Td colSpan={6} c="dimmed">
+                    No full period (line {c.level === 1 ? 'high' : 'low'})
+                  </Table.Td>
+                )}
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Frame>
+      {shown ? (
+        <Box mt="xs">
+          <Rows rows={shown.periods}>
+            {(rows) => (
+              <Frame accent={accent} minWidth={520}>
+                <Table {...tableProps}>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th style={{ width: 56 }}>#</Table.Th>
+                      <Table.Th>Time</Table.Th>
+                      <Table.Th>Period</Table.Th>
+                      <Table.Th>Frequency</Table.Th>
+                      <Table.Th>High</Table.Th>
+                      <Table.Th>Duty</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {rows.map((p) => (
+                      <Table.Tr key={p.index}>
+                        <Table.Td>{p.index}</Table.Td>
+                        <Table.Td ff="monospace">{usLabel(p.start_us)}</Table.Td>
+                        <Table.Td ff="monospace">{usLabel(p.period_us)}</Table.Td>
+                        <Table.Td ff="monospace">{fmtNum(p.freq_hz)} Hz</Table.Td>
+                        <Table.Td ff="monospace">{usLabel(p.high_us)}</Table.Td>
+                        <Table.Td ff="monospace">{(100 * p.duty).toFixed(2)} %</Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Frame>
+            )}
+          </Rows>
+        </Box>
+      ) : null}
+    </Box>
+  )
+}
+
+/** 1-Wire transactions: reset, ROM step, function. */
+export function OneWireTable({ transactions, accent = DECODE_ACCENT.onewire }: { transactions: OneWireTransaction[]; accent?: string }) {
+  return (
+    <Rows rows={transactions}>
+      {(rows) => (
+        <Frame accent={accent} minWidth={620}>
+          <Table {...tableProps}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th style={{ width: 48 }}>#</Table.Th>
+                <Table.Th style={{ width: 100 }}>Time</Table.Th>
+                <Table.Th style={{ width: 150 }}>ROM</Table.Th>
+                <Table.Th>Device</Table.Th>
+                <Table.Th>Function</Table.Th>
+                <Table.Th style={{ width: 90 }}>Status</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((t) => (
+                <Table.Tr key={t.index}>
+                  <Table.Td>{t.index}</Table.Td>
+                  <Table.Td ff="monospace">{usLabel(t.start_us)}</Table.Td>
+                  <Table.Td fw={600}>
+                    {t.rom_command_name ?? (t.reset ? 'reset' : EMPTY)}
+                    {t.overdrive ? (
+                      <Text span c="dimmed" size="xs">
+                        {' '}
+                        OD
+                      </Text>
+                    ) : null}
+                  </Table.Td>
+                  <Table.Td ff="monospace">{t.rom ?? EMPTY}</Table.Td>
+                  <Table.Td ff="monospace">
+                    {t.function ? `${t.function}${t.detail ? `: ${t.detail}` : ''}` : EMPTY}
+                    {t.bytes_hex ? (
+                      <Text size="xs" c="dimmed" ff="monospace">
+                        {clipHex(t.bytes_hex, t.bytes_hex.split(' ').length)}
+                      </Text>
+                    ) : null}
+                  </Table.Td>
+                  <Table.Td>
+                    {t.ok ? <Status ok label={t.reset ? 'presence' : 'OK'} /> : <Status ok={false} label="error" tip={t.error} />}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Frame>
+      )}
+    </Rows>
+  )
+}
+
+/** SMBus / PMBus transactions: protocol, command, value, PEC. */
+export function SmbusTable({ transactions, accent = DECODE_ACCENT.smbus }: { transactions: SmbusTransaction[]; accent?: string }) {
+  return (
+    <Rows rows={transactions}>
+      {(rows) => (
+        <Frame accent={accent} minWidth={620}>
+          <Table {...tableProps}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th style={{ width: 48 }}>#</Table.Th>
+                <Table.Th style={{ width: 100 }}>Time</Table.Th>
+                <Table.Th style={{ width: 64 }}>Addr</Table.Th>
+                <Table.Th style={{ width: 120 }}>Protocol</Table.Th>
+                <Table.Th>Command</Table.Th>
+                <Table.Th>Value</Table.Th>
+                <Table.Th style={{ width: 90 }}>Status</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((t) => (
+                <Table.Tr key={t.index}>
+                  <Table.Td>{t.index}</Table.Td>
+                  <Table.Td ff="monospace">{usLabel(t.start_us)}</Table.Td>
+                  <Table.Td ff="monospace" fw={600}>
+                    {t.addr_hex}
+                  </Table.Td>
+                  <Table.Td>{t.kind}</Table.Td>
+                  <Table.Td ff="monospace">
+                    {t.command_name ?? (t.command !== undefined ? `0x${t.command.toString(16).toUpperCase().padStart(2, '0')}` : EMPTY)}
+                  </Table.Td>
+                  <Table.Td ff="monospace">
+                    {t.value ?? (t.data_hex || EMPTY)}
+                    {t.value && t.data_hex ? (
+                      <Text span c="dimmed" size="xs">
+                        {' '}
+                        ({t.data_hex})
+                      </Text>
+                    ) : null}
+                  </Table.Td>
+                  <Table.Td>
+                    {t.ok ? <Status ok label={t.pec === 'ok' ? 'PEC OK' : 'ACK'} /> : <Status ok={false} label="error" tip={t.error} />}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Frame>
+      )}
+    </Rows>
+  )
+}
+
 /** The decode as the right table. */
 export function DecodeTable({ result, actions }: { result: DecodeResult; actions?: DecodeRowActions }) {
   if (result.protocol === 'i2c') return <I2cTable transactions={result.transactions} rowAction={actions?.i2c} />
   if (result.protocol === 'uart') return <UartTable frames={result.frames} />
   if (result.protocol === 'usb') return <UsbTable result={result} />
+  if (result.protocol === 'modbus') return <ModbusTable frames={result.frames} />
+  if (result.protocol === 'can') return <CanTable frames={result.frames} />
+  if (result.protocol === 'pwm') return <PwmTable channels={result.channels} />
+  if (result.protocol === 'onewire') return <OneWireTable transactions={result.transactions} />
+  if (result.protocol === 'smbus' || result.protocol === 'pmbus') return <SmbusTable transactions={result.transactions} accent={DECODE_ACCENT[result.protocol]} />
   return <SpiTable frames={result.frames} rowAction={actions?.spi} />
 }
 
 /** The chips a decode puts on the waveform: each value on the LA channel that carried it. */
 export function decodeAnnotations(
   result: DecodeResult,
-  ch: { sda?: number; rx?: number; mosi?: number; miso?: number; dp?: number },
+  ch: { sda?: number; rx?: number; mosi?: number; miso?: number; dp?: number; can?: number; onewire?: number },
 ): { ch: number; startUs: number; endUs: number; label: string; color: string }[] {
   const out: { ch: number; startUs: number; endUs: number; label: string; color: string }[] = []
   if (result.protocol === 'i2c') {
@@ -481,6 +900,20 @@ export function decodeAnnotations(
   } else if (result.protocol === 'usb') {
     if (!ch.dp) return out
     for (const p of result.packets) out.push({ ch: ch.dp, startUs: p.start_us, endUs: p.end_us, label: usbChip(p), color: DECODE_ACCENT.usb })
+  } else if (result.protocol === 'modbus') {
+    if (!ch.rx) return out
+    for (const f of result.frames) out.push({ ch: ch.rx, startUs: f.start_us, endUs: f.end_us, label: `${f.addr} ${f.function_name}${f.ok ? '' : ' !'}`, color: DECODE_ACCENT.modbus })
+  } else if (result.protocol === 'can') {
+    if (!ch.can) return out
+    for (const f of result.frames) out.push({ ch: ch.can, startUs: f.start_us, endUs: f.end_us, label: f.kind === 'error' ? 'error frame' : `${f.id_hex} [${f.len}]${f.ok ? '' : ' !'}`, color: DECODE_ACCENT.can })
+  } else if (result.protocol === 'onewire') {
+    if (!ch.onewire) return out
+    for (const t of result.transactions) out.push({ ch: ch.onewire, startUs: t.start_us, endUs: t.end_us, label: [t.rom_command_name, t.function].filter(Boolean).join(' ') || 'reset', color: DECODE_ACCENT.onewire })
+  } else if (result.protocol === 'smbus' || result.protocol === 'pmbus') {
+    if (!ch.sda) return out
+    for (const t of result.transactions) out.push({ ch: ch.sda, startUs: t.start_us, endUs: t.end_us, label: t.command_name ?? t.kind, color: DECODE_ACCENT[result.protocol] })
+  } else if (result.protocol === 'pwm') {
+    return out
   } else {
     for (const f of result.frames) {
       if (ch.mosi) out.push({ ch: ch.mosi, startUs: f.start_us, endUs: f.end_us, label: f.mosi_hex, color: DECODE_ACCENT.spi })
