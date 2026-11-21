@@ -32,6 +32,8 @@ export {
   decodeAnnotations,
   UsbTable,
   usbChip,
+  decodeRateNeed,
+  type DecodeRateOptions,
   ModbusTable,
   CanTable,
   PwmTable,
