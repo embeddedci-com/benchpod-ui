@@ -205,7 +205,8 @@ export function CaptureView({
         dm: roleChannel(w, 'usb_dm') ?? namedChannel(w, /^(usb[_ -]?)?(d-|dm|dminus)$/i),
         can: namedChannel(w, /can.*(rx|rxd)|^rxd$/i),
         onewire: namedChannel(w, /1[-_ ]?wire|onewire|^ow$/i),
-        tx: roleChannel(w, 'uart_tx') ?? namedChannel(w, /modbus.*tx|rs-?485.*(di|tx)|\btx\b/i, roleChannel(w, 'uart_rx')),
+        // Only a signal named for it: the uart_tx role is usually the console's line.
+        tx: namedChannel(w, /modbus.*tx|rs-?485.*(di|tx)/i, roleChannel(w, 'uart_rx')),
       })
       if (w.uart_baud) setBaud(w.uart_baud)
     })
