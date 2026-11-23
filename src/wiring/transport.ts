@@ -12,7 +12,7 @@ export function jtagOnlyTarget(target: string): boolean {
   return JTAG_ONLY_TARGETS.has(name) || name.startsWith('riscv')
 }
 
-type PinProfile = Partial<Pick<Wiring, 'swd_swclk' | 'swd_swdio' | 'jtag_tck' | 'jtag_tms' | 'jtag_tdi' | 'jtag_tdo'>>
+type PinProfile = Partial<Pick<Wiring, 'swd_swclk' | 'swd_swdio' | 'jtag_tck' | 'jtag_tms' | 'jtag_tdi' | 'jtag_tdo' | 'debug_port'>>
 
 /** Whether both SWD pins are wired. */
 export function swdWired(w: PinProfile | null | undefined): boolean {
@@ -24,11 +24,22 @@ export function jtagWired(w: PinProfile | null | undefined): boolean {
   return !!w && isLaChannel(w.jtag_tck) && isLaChannel(w.jtag_tms) && isLaChannel(w.jtag_tdi) && isLaChannel(w.jtag_tdo)
 }
 
+/** The pin fields of the profile's debug_port that are not set; empty when debug_port is unset or complete. */
+export function debugPortMissing(w: PinProfile | null | undefined): string[] {
+  const port = w?.debug_port
+  if (!w || (port !== 'swd' && port !== 'jtag')) return []
+  const fields = port === 'jtag' ? (['jtag_tck', 'jtag_tms', 'jtag_tdi', 'jtag_tdo'] as const) : (['swd_swclk', 'swd_swdio'] as const)
+  return fields.filter((f) => !isLaChannel(w[f]))
+}
+
 /**
- * The port the host tools use, the same rule everywhere: JTAG when all four JTAG pins are wired
- * and there are no SWD pins or the target only has JTAG; else SWD. null: neither is wired.
+ * The port the host tools use, the same rule everywhere: the profile's debug_port when it is set
+ * (null when that port's pins are incomplete: debugPortMissing names them); else JTAG when all four
+ * JTAG pins are wired and there are no SWD pins or the target only has JTAG; else SWD. null: nothing
+ * to flash through. (Pins given in a call win over the profile; the UI always uses the profile.)
  */
 export function debugTransport(w: PinProfile | null | undefined, target = ''): DebugTransport | null {
+  if (w?.debug_port === 'swd' || w?.debug_port === 'jtag') return debugPortMissing(w).length ? null : w.debug_port
   const swd = swdWired(w)
   const jtag = jtagWired(w)
   if (jtag && (!swd || jtagOnlyTarget(target))) return 'jtag'

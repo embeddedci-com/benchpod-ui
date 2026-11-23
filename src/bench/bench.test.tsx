@@ -165,6 +165,16 @@ describe('FlashControls debug port', () => {
     render(<MantineProvider><FlashControls call={callWith(profile, 'target/esp32.cfg')} firmware={store} /></MantineProvider>)
     expect((await screen.findByTestId('flash-transport')).textContent).toContain('JTAG on LA11 / LA12 / LA3 / LA4')
   })
+  it('follows the profile debug_port, and names the missing pins when it is incomplete', async () => {
+    cleanup()
+    const { FlashControls } = await import('./FlashControls')
+    const profile = { swd_swclk: 11, swd_swdio: 12, jtag_tck: 11, jtag_tms: 12, jtag_tdi: 3, jtag_tdo: 4 }
+    render(<MantineProvider><FlashControls call={callWith({ ...profile, debug_port: 'jtag' })} firmware={store} /></MantineProvider>)
+    expect((await screen.findByTestId('flash-transport')).textContent).toContain('JTAG on LA11 / LA12 / LA3 / LA4')
+    cleanup()
+    render(<MantineProvider><FlashControls call={callWith({ swd_swclk: 11, swd_swdio: 12, debug_port: 'jtag' })} firmware={store} /></MantineProvider>)
+    expect((await screen.findByTestId('flash-no-swd')).textContent).toContain('jtag_tck, jtag_tms, jtag_tdi, jtag_tdo are not set')
+  })
 })
 
 describe('parseWaveformCsv', () => {

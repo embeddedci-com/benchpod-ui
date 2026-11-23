@@ -284,4 +284,12 @@ describe('JTAG pins', () => {
     expect(ch[10].conflict).toBe(false)
     expect(ch[11].users.map((u) => u.label)).toEqual(['SWDIO', 'TMS'])
   })
+
+  it('accepts debug_port swd, jtag or null and rejects anything else', () => {
+    for (const v of ['swd', 'jtag', null]) expect(validateWiring({ debug_port: v }).errors).toEqual([])
+    expect(validateWiring({ debug_port: 'swo' }).errors.map((e) => e.field)).toEqual(['debug_port'])
+    expect(WIRING_DEFAULTS.debug_port).toBeNull()
+    expect(coerceStoredWiring({ debug_port: 'jtag' }).debug_port).toBe('jtag')
+    expect(coerceStoredWiring({ debug_port: 'x' }).debug_port).toBeUndefined()
+  })
 })

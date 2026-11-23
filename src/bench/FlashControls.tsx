@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Alert, Badge, Button, Checkbox, Divider, FileButton, Group, Select, Stack, Text, TextInput } from '@mantine/core'
 import { TerminalText } from '../results/ResultView'
 import { HelpTip } from '../help/HelpTip'
-import { debugTransport } from '../wiring/transport'
+import { debugPortMissing, debugTransport } from '../wiring/transport'
 import { benchData, benchError, type BenchCall } from './benchCall'
 
 // Flash the board's firmware from a file, by hand: the web app's Flash tab for a host's bench
@@ -159,9 +159,10 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
   const targetChanged = !!wiring && (target.trim() !== (wiring.swd_target ?? '') || nreset !== !!wiring.swd_nreset)
 
   // The debug pins come from the pins profile only: without them there is nothing to flash through.
-  // The port is not chosen here: JTAG when the wiring has the JTAG pins and no SWD pins or the target
-  // only has JTAG, else SWD (the same rule the CLI, SDK and MCP server use).
+  // The port is not chosen here: the profile's debug_port, else JTAG when the wiring has the JTAG pins
+  // and no SWD pins or the target only has JTAG, else SWD (the same rule the CLI, SDK and MCP server use).
   const transport = debugTransport(wiring?.profile as Parameters<typeof debugTransport>[0], target.trim() || wiring?.swd_target || '')
+  const missingPort = debugPortMissing(wiring?.profile as Parameters<typeof debugPortMissing>[0])
   const pinsSet = transport !== null
   const portName = transport === 'jtag' ? 'JTAG' : 'SWD'
   const pinText =
@@ -210,13 +211,17 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
         <Text size="xs" c="dimmed" data-testid="flash-transport">
           {portName} on {pinText}, from the pins profile.{' '}
           <HelpTip label="debug port" docs="/docs/benchpod-targets/jtag">
-            The port follows the wiring: JTAG when the JTAG pins are wired and there are no SWD pins or the chip only
-            has JTAG, else SWD.
+            The pins profile's debug port when it sets one; else JTAG when the JTAG pins are wired and there are no SWD
+            pins or the chip only has JTAG, else SWD.
           </HelpTip>
         </Text>
       ) : wiring ? (
         <Alert color="yellow" variant="light" p="xs" data-testid="flash-no-swd">
-          <Text size="xs">Set SWCLK and SWDIO in the Pins tab (or TCK, TMS, TDI and TDO) before flashing: the pins profile has no debug pins.</Text>
+          <Text size="xs">
+            {missingPort.length
+              ? `The pins profile sets debug_port to ${String(wiring?.profile?.debug_port)}, but ${missingPort.join(', ')} ${missingPort.length > 1 ? 'are' : 'is'} not set.`
+              : 'Set SWCLK and SWDIO in the Pins tab (or TCK, TMS, TDI and TDO) before flashing: the pins profile has no debug pins.'}
+          </Text>
         </Alert>
       ) : null}
       <Group gap="xs">
