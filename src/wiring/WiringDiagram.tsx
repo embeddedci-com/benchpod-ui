@@ -6,20 +6,22 @@ import { laChannelMap, LA_CHANNEL_COUNT, type Wiring, type WiringRole } from './
 // one line per wire colored by what it carries, the I/O voltage and power rail on top. A channel
 // whose wiring is not saved yet is drawn dashed. Export as SVG to keep next to the bench.
 
-type Kind = 'swd' | 'uart' | 'i2c' | 'spi' | 'signal'
+type Kind = 'swd' | 'jtag' | 'uart' | 'i2c' | 'spi' | 'signal'
 
 const KIND_COLORS: Record<Kind, string> = {
   swd: 'var(--mantine-color-violet-6)',
+  jtag: 'var(--mantine-color-indigo-6)',
   uart: 'var(--mantine-color-blue-6)',
   i2c: 'var(--mantine-color-teal-6)',
   spi: 'var(--mantine-color-orange-6)',
   signal: 'var(--mantine-color-cyan-6)',
 }
 
-const KIND_LABELS: Record<Kind, string> = { swd: 'SWD', uart: 'UART', i2c: 'I2C', spi: 'SPI', signal: 'Signal' }
+const KIND_LABELS: Record<Kind, string> = { swd: 'SWD', jtag: 'JTAG', uart: 'UART', i2c: 'I2C', spi: 'SPI', signal: 'Signal' }
 
 function roleKind(role: string): Kind {
   if (role.startsWith('swd_')) return 'swd'
+  if (role.startsWith('jtag_')) return 'jtag'
   if (role.startsWith('uart_')) return 'uart'
   if (role.startsWith('i2c_')) return 'i2c'
   if (role.startsWith('spi_')) return 'spi'

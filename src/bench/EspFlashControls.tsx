@@ -180,7 +180,7 @@ export function FlashModes({ swd, spi, uart }: { swd: ReactNode; spi: ReactNode;
           value={mode}
           onChange={(v) => setMode(v as FlashMode)}
           data={[
-            { value: 'swd', label: 'SWD' },
+            { value: 'swd', label: 'SWD / JTAG' },
             { value: 'spi', label: 'SPI flash' },
             { value: 'uart', label: 'UART (ESP32)' },
           ]}

@@ -142,6 +142,31 @@ describe('FlashControls', () => {
   })
 })
 
+describe('FlashControls debug port', () => {
+  const store = { upload: vi.fn(), recent: async () => [{ name: 'app.elf', path: '/f/app.elf', size: 2048, modified: '' }] }
+  const callWith = (profile: Record<string, unknown>, swd_target = 'target/stm32f4x.cfg') =>
+    vi.fn(async (tool: string): Promise<BenchResult> => (tool === 'wiring' ? { text: '', structured: { efuse: 1, swd_target, profile } } : { text: '', structured: {} }))
+
+  it('says JTAG for JTAG-only wiring and enables Flash', async () => {
+    cleanup()
+    const { FlashControls } = await import('./FlashControls')
+    render(<MantineProvider><FlashControls call={callWith({ jtag_tck: 1, jtag_tms: 2, jtag_tdi: 3, jtag_tdo: 4 })} firmware={store} /></MantineProvider>)
+    expect((await screen.findByTestId('flash-transport')).textContent).toContain('JTAG on LA1 / LA2 / LA3 / LA4')
+    const btn = screen.getByRole('button', { name: 'Flash' }) as HTMLButtonElement
+    await waitFor(() => expect(btn.disabled).toBe(false))
+  })
+  it('says SWD with both wired, and JTAG when the target only has JTAG', async () => {
+    cleanup()
+    const { FlashControls } = await import('./FlashControls')
+    const profile = { swd_swclk: 11, swd_swdio: 12, jtag_tck: 11, jtag_tms: 12, jtag_tdi: 3, jtag_tdo: 4 }
+    render(<MantineProvider><FlashControls call={callWith(profile)} firmware={store} /></MantineProvider>)
+    expect((await screen.findByTestId('flash-transport')).textContent).toContain('SWD on LA11 / LA12')
+    cleanup()
+    render(<MantineProvider><FlashControls call={callWith(profile, 'target/esp32.cfg')} firmware={store} /></MantineProvider>)
+    expect((await screen.findByTestId('flash-transport')).textContent).toContain('JTAG on LA11 / LA12 / LA3 / LA4')
+  })
+})
+
 describe('parseWaveformCsv', () => {
   it('takes one value per line', async () => {
     const { parseWaveformCsv } = await import('./GeneratorControls')
@@ -250,6 +275,7 @@ describe('describeCall', () => {
     expect(describeCall('i2c_open', { sda: 2, scl: 1, hz: 100000, pullups: 'pod' })).toBe('Open I2C on LA2 (SDA) and LA1 (SCL) at 100 kHz?')
     expect(describeCall('gpio_write', { la: 5, value: 1 })).toBe('Drive LA5 high?')
     expect(describeCall('flash', { file: '/f/x.elf', target: 'target/stm32f4x.cfg' })).toBe('Flash x.elf to the board over SWD?')
+    expect(describeCall('flash', { file: '/f/x.elf', target: 'target/esp32.cfg' })).toBe('Flash x.elf to the board over JTAG?')
     expect(describeCall('flash', { file: '/f/app.bin', target: 'esp32s3' })).toBe('Flash app.bin to the ESP32S3 over its UART?')
     expect(describeCall('gpio_mystery', {})).toBeNull()
   })

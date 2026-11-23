@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Badge, Button, Checkbox, Divider, FileButton, Group, Select, Stack, Text, TextInput } from '@mantine/core'
 import { TerminalText } from '../results/ResultView'
+import { HelpTip } from '../help/HelpTip'
+import { debugTransport } from '../wiring/transport'
 import { benchData, benchError, type BenchCall } from './benchCall'
 
 // Flash the board's firmware from a file, by hand: the web app's Flash tab for a host's bench
 // panel. The host stores the file where its flash tool can read it (upload) and lists the recent
-// ones; the SWD pins, the reset line and the OpenOCD target come from the wiring.
+// ones; the SWD or JTAG pins (the port follows the wiring and the target), the reset line and the OpenOCD target come from the wiring.
 
 export type FirmwareFile = { name: string; path: string; size: number; modified: string }
 
@@ -156,8 +158,16 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
   }
   const targetChanged = !!wiring && (target.trim() !== (wiring.swd_target ?? '') || nreset !== !!wiring.swd_nreset)
 
-  // The SWD pins come from the pins profile only: without them there is nothing to flash through.
-  const swdSet = !!(wiring?.profile?.swd_swclk && wiring?.profile?.swd_swdio)
+  // The debug pins come from the pins profile only: without them there is nothing to flash through.
+  // The port is not chosen here: JTAG when the wiring has the JTAG pins and no SWD pins or the target
+  // only has JTAG, else SWD (the same rule the CLI, SDK and MCP server use).
+  const transport = debugTransport(wiring?.profile as Parameters<typeof debugTransport>[0], target.trim() || wiring?.swd_target || '')
+  const pinsSet = transport !== null
+  const portName = transport === 'jtag' ? 'JTAG' : 'SWD'
+  const pinText =
+    transport === 'jtag'
+      ? [wiring?.profile?.jtag_tck, wiring?.profile?.jtag_tms, wiring?.profile?.jtag_tdi, wiring?.profile?.jtag_tdo].map((n) => `LA${String(n)}`).join(' / ')
+      : `LA${String(wiring?.profile?.swd_swclk)} / LA${String(wiring?.profile?.swd_swdio)}`
   return (
     <Stack gap="sm" p="sm">
       <Group gap="xs" align="flex-end">
@@ -196,17 +206,21 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
         <Checkbox size="xs" label="Power the board first" checked={powerFirst} onChange={(e) => setPowerFirst(e.currentTarget.checked)} />
         <Checkbox size="xs" label="Verify" checked={verify} onChange={(e) => setVerify(e.currentTarget.checked)} />
       </Group>
-      {swdSet ? (
-        <Text size="xs" c="dimmed">
-          SWD on LA{String(wiring?.profile?.swd_swclk)} / LA{String(wiring?.profile?.swd_swdio)}, from the pins profile.
+      {pinsSet ? (
+        <Text size="xs" c="dimmed" data-testid="flash-transport">
+          {portName} on {pinText}, from the pins profile.{' '}
+          <HelpTip label="debug port" docs="/docs/benchpod-targets/jtag">
+            The port follows the wiring: JTAG when the JTAG pins are wired and there are no SWD pins or the chip only
+            has JTAG, else SWD.
+          </HelpTip>
         </Text>
       ) : wiring ? (
         <Alert color="yellow" variant="light" p="xs" data-testid="flash-no-swd">
-          <Text size="xs">Set SWCLK and SWDIO in the Pins tab before flashing: the pins profile has no SWD pins.</Text>
+          <Text size="xs">Set SWCLK and SWDIO in the Pins tab (or TCK, TMS, TDI and TDO) before flashing: the pins profile has no debug pins.</Text>
         </Alert>
       ) : null}
       <Group gap="xs">
-        <Button size="xs" onClick={() => void flash()} loading={busy === 'flash'} disabled={!path || !!busy || !swdSet || (!target.trim() && !wiring?.swd_target)}>
+        <Button size="xs" onClick={() => void flash()} loading={busy === 'flash'} disabled={!path || !!busy || !pinsSet || (!target.trim() && !wiring?.swd_target)}>
           Flash
         </Button>
         {targetChanged && result?.ok ? (
@@ -237,7 +251,7 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
             ) : null}
             {result.target_unreachable ? (
               <Text size="xs" c="red">
-                The board did not answer on SWD: is it powered, wired as the wiring says, and not held in reset?
+                The board did not answer on {portName}: is it powered, wired as the wiring says, and not held in reset?
               </Text>
             ) : null}
             {result.stalled ? (

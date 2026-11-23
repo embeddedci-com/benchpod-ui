@@ -4,6 +4,7 @@
 // the pod keep working with the same keys.
 
 import {
+  sharesPin,
   canonicalPulls,
   LA_CHANNEL_COUNT,
   LA_PULLS,
@@ -20,7 +21,7 @@ import {
 } from './model'
 
 /** What a pin can be used for, grouped the way the editor shows them. */
-export type PinKind = 'uart' | 'i2c' | 'swd' | 'spi' | 'signal'
+export type PinKind = 'uart' | 'i2c' | 'swd' | 'jtag' | 'spi' | 'signal'
 
 export function roleKind(role: WiringRole): PinKind {
   return role.split('_')[0] as PinKind
@@ -34,6 +35,11 @@ export const PIN_ROLE_OPTIONS: { role: WiringRole; label: string }[] = [
   { role: 'i2c_scl', label: 'I2C SCL' },
   { role: 'swd_swclk', label: 'SWD clock (SWCLK)' },
   { role: 'swd_swdio', label: 'SWD data (SWDIO)' },
+  { role: 'jtag_tck', label: 'JTAG clock (TCK)' },
+  { role: 'jtag_tms', label: 'JTAG mode (TMS)' },
+  { role: 'jtag_tdi', label: 'JTAG data in (TDI)' },
+  { role: 'jtag_tdo', label: 'JTAG data out (TDO)' },
+  { role: 'jtag_trst', label: 'JTAG reset (nTRST)' },
   { role: 'spi_sclk', label: 'SPI clock (SCLK)' },
   { role: 'spi_mosi', label: 'SPI MOSI' },
   { role: 'spi_miso', label: 'SPI MISO' },
@@ -141,6 +147,10 @@ export function assignPin(w: Wiring, la: number, use: PinUseChoice): Partial<Wir
   if (la < 1 || la > LA_CHANNEL_COUNT) return {}
   const view = pinViews(w)[la - 1]
   if (view.users.length === 1 && pinUseChoice(view) === use) return {}
+  // SWCLK/TCK and SWDIO/TMS may share a pin: adding one to the other's pin keeps both.
+  if (use !== 'none' && use !== 'signal' && view.users.length > 0 && view.users.every((u) => u.kind === 'role' && (u.role === use || sharesPin(u.role, use)))) {
+    return view.users.some((u) => u.kind === 'role' && u.role === use) ? {} : { [use]: la }
+  }
   const patch = clearPin(w, la)
   if (use === 'none') return patch
   if (use === 'signal') {

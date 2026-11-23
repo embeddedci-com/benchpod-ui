@@ -7,6 +7,7 @@ import {
   pullLabel,
   laChannelLabel,
   laChannelMap,
+  pinDutDirs,
   validateWiring,
   WIRING_DEFAULTS,
   wiringFieldErrors,
@@ -255,5 +256,32 @@ describe('version 2 profiles', () => {
     const w = effectiveWiring({ uart_rx: 7 })
     expect(w.swd_swclk).toBe(11)
     expect(w.la_mv).toBe(3300)
+  })
+})
+
+describe('JTAG pins', () => {
+  const jtag = { version: 2, jtag_tck: 3, jtag_tms: 4, jtag_tdi: 5, jtag_tdo: 6, jtag_trst: 7 }
+
+  it('accepts the five JTAG roles, and nothing is wired by default', () => {
+    expect(validateWiring(jtag).errors).toEqual([])
+    const w = effectiveWiring({})
+    expect([w.jtag_tck, w.jtag_tms, w.jtag_tdi, w.jtag_tdo, w.jtag_trst]).toEqual([null, null, null, null, null])
+    expect(effectiveWiring(jtag).jtag_tdo).toBe(6)
+  })
+  it('checks the range like the other pins', () => {
+    expect(validateWiring({ jtag_tdi: 15 }).errors).toEqual([{ field: 'jtag_tdi', message: 'jtag_tdi must be an LA channel 1-14, or null when it isn\'t wired' }])
+  })
+  it('lets TCK share SWCLK and TMS share SWDIO, and no other pair', () => {
+    expect(validateWiring({ version: 2, swd_swclk: 11, swd_swdio: 12, jtag_tck: 11, jtag_tms: 12, jtag_tdi: 3, jtag_tdo: 4 }).errors).toEqual([])
+    expect(validateWiring({ version: 2, swd_swclk: 11, jtag_tdi: 11 }).errors).toEqual([{ field: 'jtag_tdi', message: 'LA11 is used by both swd_swclk and jtag_tdi' }])
+    expect(validateWiring({ version: 2, swd_swdio: 12, jtag_tck: 12 }).errors).toEqual([{ field: 'jtag_tck', message: 'LA12 is used by both swd_swdio and jtag_tck' }])
+    expect(validateWiring({ version: 2, jtag_tdi: 3, jtag_tdo: 3 }).errors).toEqual([{ field: 'jtag_tdo', message: 'LA3 is used by both jtag_tdi and jtag_tdo' }])
+  })
+  it('gives each its default direction, and both ways to a pin shared by SWDIO and TMS', () => {
+    const w = effectiveWiring({ version: 2, swd_swclk: 11, swd_swdio: 12, jtag_tck: 11, jtag_tms: 12, jtag_tdi: 3, jtag_tdo: 4, jtag_trst: 5 })
+    expect(pinDutDirs(w)).toMatchObject({ 11: 'dut_input', 12: 'bidir', 3: 'dut_input', 4: 'dut_output', 5: 'dut_input' })
+    const ch = laChannelMap(w)
+    expect(ch[10].conflict).toBe(false)
+    expect(ch[11].users.map((u) => u.label)).toEqual(['SWDIO', 'TMS'])
   })
 })

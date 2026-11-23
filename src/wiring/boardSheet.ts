@@ -92,10 +92,11 @@ export const KIND_HEX: Record<PinKind, string> = {
   uart: '#228be6',
   i2c: '#12b886',
   swd: '#7950f2',
+  jtag: '#5c7cfa',
   spi: '#fd7e14',
   signal: '#15aabf',
 }
-const KIND_NAMES: Record<PinKind, string> = { uart: 'UART', i2c: 'I2C', swd: 'SWD', spi: 'SPI', signal: 'Signal' }
+const KIND_NAMES: Record<PinKind, string> = { uart: 'UART', i2c: 'I2C', swd: 'SWD', jtag: 'JTAG', spi: 'SPI', signal: 'Signal' }
 const FIXED_HEX: Record<Exclude<HeaderPinKind, 'la'>, string> = {
   gnd: '#495057',
   power: '#f59f00',
@@ -118,6 +119,11 @@ const ROLE_CONNECT: Record<WiringRole, string> = {
   i2c_scl: 'SCL',
   swd_swclk: 'SWCLK',
   swd_swdio: 'SWDIO',
+  jtag_tck: 'TCK',
+  jtag_tms: 'TMS',
+  jtag_tdi: 'TDI',
+  jtag_tdo: 'TDO',
+  jtag_trst: 'nTRST',
   spi_sclk: 'SCLK',
   spi_mosi: 'MOSI (board SDI)',
   spi_miso: 'MISO (board SDO)',
@@ -151,7 +157,7 @@ function fmtVolts(mv: number) {
   return `${(mv / 1000).toFixed(1)} V`
 }
 
-function summaryOf(w: Wiring, uartUsed: boolean, swdUsed: boolean): string {
+function summaryOf(w: Wiring, uartUsed: boolean, swdUsed: boolean, jtagUsed: boolean): string {
   const parts = [
     `I/O ${w.la_mv ? fmtVolts(w.la_mv) : 'not set'}`,
     `target power ${w.efuse === 1 ? 'internal 5 V' : w.efuse === 2 ? 'external supply' : 'not set'}`,
@@ -160,7 +166,7 @@ function summaryOf(w: Wiring, uartUsed: boolean, swdUsed: boolean): string {
     const parity = w.uart_parity === 'even' ? 'E' : w.uart_parity === 'odd' ? 'O' : 'N'
     parts.push(`UART ${w.uart_baud} 8${parity}${w.uart_stop_bits === 2 ? 2 : 1}`)
   }
-  if (swdUsed && w.swd_target) parts.push(`SWD ${w.swd_target.replace(/^target\//, '').replace(/\.cfg$/, '')}`)
+  if ((swdUsed || jtagUsed) && w.swd_target) parts.push(`${swdUsed ? 'SWD' : 'JTAG'} ${w.swd_target.replace(/^target\//, '').replace(/\.cfg$/, '')}`)
   return parts.join(', ')
 }
 
@@ -184,7 +190,7 @@ export function boardSheet(w: Wiring, header: BoardHeader, title: string): Board
     return { n: p.n, name: p.label, kind: 'la', use, pull: v.pullOn && pull.dir ? `pull-${pull.dir} ${pull.ohms}` : null, used: !!use }
   })
   const roleOn = (prefix: string) => WIRING_ROLES.some((r) => r.startsWith(prefix) && w[r] != null)
-  return { header, title, summary: summaryOf(w, roleOn('uart_'), roleOn('swd_')), pins }
+  return { header, title, summary: summaryOf(w, roleOn('uart_'), roleOn('swd_'), roleOn('jtag_')), pins }
 }
 
 /** One row of the "what to connect" table: only what the profile uses, plus ground. */
