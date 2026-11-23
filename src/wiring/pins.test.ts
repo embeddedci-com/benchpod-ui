@@ -134,3 +134,23 @@ describe('pulls', () => {
     expect(validateWiring({ version: 2, i2c_sda: 7, pulls: [7] }).warnings.map((e) => e.field)).toEqual(['i2c_sda'])
   })
 })
+
+describe('JTAG pins in the editor', () => {
+  it('puts a JTAG role on a free pin, and keeps SWD when TCK joins SWCLK', () => {
+    const w = effectiveWiring({ version: 2, la_mv: 3300, efuse: 1, i2c_addr: '0x76', swd_swclk: 11, swd_swdio: 12 })
+    const a = apply(w, assignPin(w, 3, 'jtag_tdi'))
+    expect(a.jtag_tdi).toBe(3)
+    const b = apply(a, assignPin(a, 11, 'jtag_tck'))
+    expect([b.swd_swclk, b.jtag_tck]).toEqual([11, 11])
+    expect(pinViews(b)[10].users.map((u) => u.label)).toEqual(['SWCLK', 'TCK'])
+    expect(validateWiring(b as unknown as Record<string, unknown>).errors).toEqual([])
+    expect(pinViews(b)[10].kind).toBe('swd')
+  })
+  it('moves a role off a pin that something else uses, and frees a shared pin when it is set to none', () => {
+    const w = effectiveWiring({ version: 2, swd_swclk: 11, swd_swdio: 12, jtag_tck: 11 })
+    const moved = apply(w, assignPin(w, 11, 'uart_rx'))
+    expect([moved.swd_swclk, moved.jtag_tck, moved.uart_rx]).toEqual([null, null, 11])
+    const none = apply(w, assignPin(w, 11, 'none'))
+    expect([none.swd_swclk, none.jtag_tck]).toEqual([null, null])
+  })
+})

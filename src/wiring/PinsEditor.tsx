@@ -27,8 +27,8 @@ import { HelpTip } from '../help/HelpTip'
 // (UART baud on the UART pins, and so on). The I/O voltage and power rail the board is powered
 // with sit above. Host-neutral and controlled: it reads `wiring` and reports each change as a patch.
 
-export const PIN_KIND_COLORS: Record<PinKind, string> = { uart: 'blue', i2c: 'teal', swd: 'violet', spi: 'orange', signal: 'cyan' }
-const PIN_KIND_LABELS: Record<PinKind, string> = { uart: 'UART', i2c: 'I2C', swd: 'SWD', spi: 'SPI', signal: 'Signal' }
+export const PIN_KIND_COLORS: Record<PinKind, string> = { uart: 'blue', i2c: 'teal', swd: 'violet', jtag: 'indigo', spi: 'orange', signal: 'cyan' }
+const PIN_KIND_LABELS: Record<PinKind, string> = { uart: 'UART', i2c: 'I2C', swd: 'SWD', jtag: 'JTAG', spi: 'SPI', signal: 'Signal' }
 const PULL_UP_COLOR = 'var(--mantine-color-red-6)'
 const PULL_DOWN_COLOR = 'var(--mantine-color-indigo-6)'
 const UART_PARITIES = [

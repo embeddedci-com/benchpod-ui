@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import { Button, Group, Modal, Stack, Text } from '@mantine/core'
+import { jtagOnlyTarget } from '../wiring/transport'
 
 // The bench controls (power, console, captures, outputs) call the BenchPod MCP tools by hand,
 // through the host's tool endpoint, which applies the same policy as the agent:
@@ -117,7 +118,8 @@ export function describeCall(tool: string, a: Record<string, unknown>): string |
     case 'flash': {
       const file = String(a.file ?? '').split(/[\\/]/).pop() || 'the image'
       const t = String(a.target ?? '')
-      return /^esp32/i.test(t) ? `Flash ${file} to the ${t.toUpperCase()} over its UART?` : `Flash ${file} to the board over SWD?`
+      if (/^esp32/i.test(t)) return `Flash ${file} to the ${t.toUpperCase()} over its UART?`
+      return `Flash ${file} to the board over ${jtagOnlyTarget(t) ? 'JTAG' : 'SWD'}?`
     }
     case 'power_cycle_and_capture':
       return "Power-cycle the board and capture its console?"

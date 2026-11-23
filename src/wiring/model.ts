@@ -87,6 +87,16 @@ export type Wiring = {
   swd_nreset: boolean
   /** OpenOCD target config, e.g. `target/stm32f4x.cfg`. */
   swd_target: string
+  /**
+   * The JTAG pins (firmware with the jtag feature, gateware 61 or later). TCK may share a channel
+   * with swd_swclk and TMS with swd_swdio; TRST (nTRST) is optional. Host tools use JTAG when all
+   * of TCK, TMS, TDI and TDO are wired and there are no SWD pins or the target is JTAG-only.
+   */
+  jtag_tck: number | null
+  jtag_tms: number | null
+  jtag_tdi: number | null
+  jtag_tdo: number | null
+  jtag_trst: number | null
   spi_sclk: number | null
   spi_mosi: number | null
   spi_miso: number | null
@@ -159,6 +169,11 @@ export const WIRING_ROLES = [
   'i2c_scl',
   'swd_swclk',
   'swd_swdio',
+  'jtag_tck',
+  'jtag_tms',
+  'jtag_tdi',
+  'jtag_tdo',
+  'jtag_trst',
   'spi_sclk',
   'spi_mosi',
   'spi_miso',
@@ -174,6 +189,11 @@ export const WIRING_ROLE_LABELS: Record<WiringRole, string> = {
   i2c_scl: 'I2C SCL',
   swd_swclk: 'SWCLK',
   swd_swdio: 'SWDIO',
+  jtag_tck: 'TCK',
+  jtag_tms: 'TMS',
+  jtag_tdi: 'TDI',
+  jtag_tdo: 'TDO',
+  jtag_trst: 'nTRST',
   spi_sclk: 'SPI SCLK',
   spi_mosi: 'SPI MOSI',
   spi_miso: 'SPI MISO',
@@ -239,6 +259,11 @@ export const WIRING_DEFAULTS: Wiring = {
   swd_swdio: 12,
   swd_nreset: false,
   swd_target: '',
+  jtag_tck: null,
+  jtag_tms: null,
+  jtag_tdi: null,
+  jtag_tdo: null,
+  jtag_trst: null,
   spi_sclk: null,
   spi_mosi: null,
   spi_miso: null,
@@ -320,7 +345,7 @@ function isCalPoint(v: unknown): v is StageCalPoint {
   )
 }
 
-function isLaChannel(v: unknown): v is number {
+export function isLaChannel(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= LA_CHANNEL_COUNT
 }
 
@@ -432,6 +457,11 @@ export const ROLE_DUT_DIRS: Record<WiringRole, WiringDutDir> = {
   i2c_scl: 'bidir',
   swd_swclk: 'dut_input',
   swd_swdio: 'bidir',
+  jtag_tck: 'dut_input',
+  jtag_tms: 'dut_input',
+  jtag_tdi: 'dut_input',
+  jtag_tdo: 'dut_output',
+  jtag_trst: 'dut_input',
   spi_sclk: 'dut_input',
   spi_mosi: 'dut_input',
   spi_miso: 'dut_output',
@@ -467,7 +497,11 @@ export function wiringDutDir(w: Wiring, name: string): WiringDutDir {
 /** LA channel -> the DUT direction of what is wired to it, as the pod gets it with `la_dir`. */
 export function pinDutDirs(w: Wiring): Record<number, WiringDutDir> {
   const out: Record<number, WiringDutDir> = {}
-  for (const u of channelUsers(w)) out[u.la] = wiringDutDir(w, u.kind === 'role' ? u.field : u.id)
+  for (const u of channelUsers(w)) {
+    const d = wiringDutDir(w, u.kind === 'role' ? u.field : u.id)
+    // SWDIO and TMS on one channel: driven and read, so both ways.
+    out[u.la] = out[u.la] !== undefined && out[u.la] !== d ? 'bidir' : d
+  }
   return out
 }
 
@@ -495,6 +529,24 @@ export function effectiveWiring(stored: Record<string, unknown>): Wiring {
 }
 
 export type WiringIssues = { errors: WiringFieldIssue[]; warnings: WiringFieldIssue[] }
+
+/** Role pairs that may sit on one LA channel: an Arm part's SWD and JTAG share SWCLK/TCK and SWDIO/TMS. */
+export const SHARED_PIN_ROLES: readonly (readonly [WiringRole, WiringRole])[] = [
+  ['swd_swclk', 'jtag_tck'],
+  ['swd_swdio', 'jtag_tms'],
+]
+
+/** Whether two channel users may share a channel (SWD/JTAG pairs). */
+export function sharesPin(a: string, b: string): boolean {
+  return SHARED_PIN_ROLES.some(([x, y]) => (a === x && b === y) || (a === y && b === x))
+}
+
+/** Whether every user of a channel is one of the shared pair, so the channel is not in conflict. */
+function isConflict(here: { id: string }[]): boolean {
+  for (let i = 0; i < here.length; i += 1)
+    for (let j = i + 1; j < here.length; j += 1) if (!sharesPin(here[i].id, here[j].id)) return true
+  return false
+}
 
 type ChannelUser = { id: string; field: string; la: number; kind: 'role' | 'signal'; label: string }
 
@@ -670,8 +722,8 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
   const byChannel = new Map<number, ChannelUser>()
   for (const u of channelUsers(eff, bad)) {
     const first = byChannel.get(u.la)
-    if (first) err(u.field, `LA${u.la} is used by both ${first.id} and ${u.id}`)
-    else byChannel.set(u.la, u)
+    if (first && !sharesPin(first.id, u.id)) err(u.field, `LA${u.la} is used by both ${first.id} and ${u.id}`)
+    else if (!first) byChannel.set(u.la, u)
   }
 
   return { errors, warnings: pullWarnings(eff) }
@@ -701,7 +753,7 @@ export function laChannelMap(w: Wiring): LaChannelInfo[] {
       la: pull.la,
       pull,
       users: here.map(({ kind, id, label, field }) => ({ kind, id, label, field })),
-      conflict: here.length > 1,
+      conflict: isConflict(here),
       warnings: warnings.filter((x) => fields.has(x.field)).map((x) => x.message),
       dutDir: dirs[pull.la] ?? null,
     }
