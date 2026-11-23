@@ -64,6 +64,9 @@ export type WiringSignal = {
 
 export type UartParity = 'none' | 'even' | 'odd'
 
+/** The debug port a board with both SWD and JTAG pins wired is flashed through; null = automatic. */
+export type DebugPort = 'swd' | 'jtag'
+
 export type Wiring = {
   version: number
   /** LA I/O-bank voltage in mV (1800 or 3300). Must be set on the pod before any LA op. */
@@ -97,6 +100,12 @@ export type Wiring = {
   jtag_tdi: number | null
   jtag_tdo: number | null
   jtag_trst: number | null
+  /**
+   * Which debug port the host tools use when both the SWD and the JTAG pins are wired: "swd",
+   * "jtag" or null (automatic: JTAG when there are no SWD pins or the target only has JTAG).
+   * Pins given in a call win over this.
+   */
+  debug_port: DebugPort | null
   spi_sclk: number | null
   spi_mosi: number | null
   spi_miso: number | null
@@ -264,6 +273,7 @@ export const WIRING_DEFAULTS: Wiring = {
   jtag_tdi: null,
   jtag_tdo: null,
   jtag_trst: null,
+  debug_port: null,
   spi_sclk: null,
   spi_mosi: null,
   spi_miso: null,
@@ -427,6 +437,8 @@ export function coerceStoredWiring(remote: Record<string, unknown>): StoredWirin
         )
     } else if (k === 'uart_parity') {
       if (v === 'none' || v === 'even' || v === 'odd') out[k] = v
+    } else if (k === 'debug_port') {
+      if (v === null || v === 'swd' || v === 'jtag') out[k] = v
     } else if (k === 'uart_stop_bits') {
       if (v === 1 || v === 2) out[k] = v
     } else if (k === 'loop_input_entry') {
@@ -624,6 +636,8 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
     const n = typeof a === 'string' && /^0x[0-9a-f]{1,2}$/i.test(a.trim()) ? Number.parseInt(a.trim().slice(2), 16) : NaN
     if (!(n >= 0x03 && n <= 0x77)) err('i2c_addr', 'i2c_addr must be a 7-bit hex address from 0x03 to 0x77, e.g. "0x76"')
   }
+  if (has('debug_port') && raw.debug_port !== null && raw.debug_port !== 'swd' && raw.debug_port !== 'jtag')
+    err('debug_port', 'debug_port must be "swd", "jtag" or null (automatic)')
   if (has('swd_nreset') && typeof raw.swd_nreset !== 'boolean') err('swd_nreset', 'swd_nreset must be true or false')
   if (has('swd_target')) {
     if (typeof raw.swd_target !== 'string') err('swd_target', 'swd_target must be a string, e.g. "target/stm32f4x.cfg"')

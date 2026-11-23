@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Box, Group, Paper, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { ownerLabel, pinWarnings, type LaPin } from '../bus/PinStrip'
-import { LA_CHANNEL_COUNT, WIRING_ROLES, type UartParity, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
+import { LA_CHANNEL_COUNT, WIRING_ROLES, type DebugPort, type UartParity, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
 import {
   assignPin,
   PIN_ROLE_OPTIONS,
@@ -20,6 +20,7 @@ import {
   type SignalUse,
 } from './pins'
 import { HelpTip } from '../help/HelpTip'
+import { jtagWired, swdWired } from './transport'
 
 // The Pins editor: one wiring profile, pin by pin. The 14 LA pins in two rows, colored by what
 // they carry, with a dot for a pull resistor that is on; click a pin to set what it is used for,
@@ -358,6 +359,29 @@ export function PinsEditor({
               error={fieldErr('i2c_addr')}
               disabled={disabled}
             />
+          ) : null}
+          {(kind === 'swd' || kind === 'jtag') && swdWired(wiring) && jtagWired(wiring) ? (
+            <Group gap={4} align="flex-end" wrap="nowrap">
+              <Select
+                size="xs"
+                style={{ flex: 1 }}
+                label="Debug port"
+                data={[
+                  { value: 'auto', label: 'Auto' },
+                  { value: 'swd', label: 'SWD' },
+                  { value: 'jtag', label: 'JTAG' },
+                ]}
+                value={wiring.debug_port ?? 'auto'}
+                onChange={(v) => v && onChange({ debug_port: v === 'swd' || v === 'jtag' ? (v as DebugPort) : null })}
+                allowDeselect={false}
+                error={fieldErr('debug_port')}
+                disabled={disabled}
+              />
+              <HelpTip label="debug port" docs="/docs/benchpod-targets/jtag#automatic-choice">
+                Which port flashing uses when both the SWD and the JTAG pins are wired. Auto picks JTAG only for chips that
+                have no SWD.
+              </HelpTip>
+            </Group>
           ) : null}
           {kind === 'swd' ? (
             <>
