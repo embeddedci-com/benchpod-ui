@@ -547,6 +547,13 @@ function LibraryCard({
             Open a sensor to preview it or run it as is.
           </HelpTip>
         </Text>
+        <Text size="xs" c="dimmed">
+          Running I2C, SPI and UART sensors pause SWD and the bus masters{' '}
+          <HelpTip label="sensors and the bus masters" docs="/docs/benchpod-sensors#emulation-image">
+            From gateware v65 the emulation image has no SWD, JTAG, SPI master or I2C master. Flash first, then start the sensors; stop
+            them and the pod switches back by itself.
+          </HelpTip>
+        </Text>
         {libError && <Alert color="red">{libError}</Alert>}
         {lib?.warnings?.map((w) => (
           <Text key={w} size="xs" c="orange">

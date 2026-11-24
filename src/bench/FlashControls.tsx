@@ -3,6 +3,7 @@ import { Alert, Badge, Button, Checkbox, Divider, FileButton, Group, Select, Sta
 import { TerminalText } from '../results/ResultView'
 import { HelpTip } from '../help/HelpTip'
 import { debugPortMissing, debugTransport } from '../wiring/transport'
+import { BusMasterNote, useBusMasterGate } from './busMasters'
 import { benchData, benchError, type BenchCall } from './benchCall'
 
 // Flash the board's firmware from a file, by hand: the web app's Flash tab for a host's bench
@@ -32,6 +33,7 @@ function fmtSize(n: number): string {
 }
 
 export function FlashControls({ call, firmware }: { call: BenchCall; firmware: FirmwareStore }) {
+  const gate = useBusMasterGate(call)
   const [files, setFiles] = useState<FirmwareFile[]>([])
   const [path, setPath] = useState<string | null>(null)
   const [wiring, setWiring] = useState<Wiring | null>(null)
@@ -224,8 +226,9 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
           </Text>
         </Alert>
       ) : null}
+      <BusMasterNote gate={gate} feature="SWD and JTAG" />
       <Group gap="xs">
-        <Button size="xs" onClick={() => void flash()} loading={busy === 'flash'} disabled={!path || !!busy || !pinsSet || (!target.trim() && !wiring?.swd_target)}>
+        <Button size="xs" onClick={() => void flash()} loading={busy === 'flash'} disabled={!path || !!busy || gate.blocked || !pinsSet || (!target.trim() && !wiring?.swd_target)}>
           Flash
         </Button>
         {targetChanged && result?.ok ? (

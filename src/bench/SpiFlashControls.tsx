@@ -4,6 +4,7 @@ import { TerminalText } from '../results/ResultView'
 import { benchData, benchError, type BenchCall } from './benchCall'
 import type { FirmwareFile, FirmwareStore } from './FlashControls'
 import { HelpTip } from '../help/HelpTip'
+import { BusMasterNote, useBusMasterGate } from './busMasters'
 
 // An SPI NOR flash chip (a 25-series part) on four LA pins, by hand: the web app's SPI flash panel
 // for a host's bench panel. The pins come from the wiring (spi_sclk/mosi/miso/cs). Program writes
@@ -53,6 +54,7 @@ function fmtBytes(n: number): string {
 }
 
 export function SpiFlashControls({ call, images, dumpDir }: { call: BenchCall; images: FirmwareStore; dumpDir?: string }) {
+  const gate = useBusMasterGate(call)
   const [hz, setHz] = useState('1000000')
   const [holdReset, setHoldReset] = useState(true)
   const [info, setInfo] = useState<Info | null>(null)
@@ -130,6 +132,7 @@ export function SpiFlashControls({ call, images, dumpDir }: { call: BenchCall; i
 
   return (
     <Stack gap="sm" p="sm">
+      <BusMasterNote gate={gate} feature="The SPI master" />
       <Text size="xs" c="dimmed">
         A 25-series SPI flash on the profile&apos;s SPI pins. Hold the board in reset.{' '}
         <HelpTip label="SPI flash" docs="/docs/benchpod-cli">
@@ -140,7 +143,7 @@ export function SpiFlashControls({ call, images, dumpDir }: { call: BenchCall; i
       <Group gap="xs" align="flex-end">
         <Select size="xs" w={100} label="SCK rate" data={RATES} value={hz} onChange={(v) => v && setHz(v)} allowDeselect={false} />
         <Checkbox size="xs" mb={6} label="Hold the board in reset" checked={holdReset} onChange={(e) => setHoldReset(e.currentTarget.checked)} />
-        <Button size="xs" variant="light" onClick={() => void identify()} loading={busy === 'info'} disabled={!!busy}>
+        <Button size="xs" variant="light" onClick={() => void identify()} loading={busy === 'info'} disabled={!!busy || gate.blocked}>
           Identify chip
         </Button>
       </Group>
@@ -176,7 +179,7 @@ export function SpiFlashControls({ call, images, dumpDir }: { call: BenchCall; i
           )}
         </FileButton>
         <TextInput size="xs" w={110} label="Start address" value={addr} onChange={(e) => setAddr(e.currentTarget.value)} error={Number.isNaN(a) ? 'hex or bytes' : undefined} />
-        <Button size="xs" onClick={() => void write()} loading={busy === 'program'} disabled={!path || Number.isNaN(a) || !!busy}>
+        <Button size="xs" onClick={() => void write()} loading={busy === 'program'} disabled={!path || Number.isNaN(a) || !!busy || gate.blocked}>
           Erase, write, verify
         </Button>
       </Group>
@@ -191,7 +194,7 @@ export function SpiFlashControls({ call, images, dumpDir }: { call: BenchCall; i
       <Group gap="xs" align="flex-end">
         <TextInput size="xs" w={110} label="Address" value={readAddr} onChange={(e) => setReadAddr(e.currentTarget.value)} error={Number.isNaN(ra) ? 'hex or bytes' : undefined} />
         <NumberInput size="xs" w={120} label="Bytes" value={readLen} onChange={(v) => setReadLen(typeof v === 'number' ? v : '')} min={1} max={16 << 20} hideControls />
-        <Button size="xs" variant="light" onClick={() => void doRead()} loading={busy === 'read'} disabled={Number.isNaN(ra) || n <= 0 || (toFile && !dumpDir) || !!busy}>
+        <Button size="xs" variant="light" onClick={() => void doRead()} loading={busy === 'read'} disabled={Number.isNaN(ra) || n <= 0 || (toFile && !dumpDir) || !!busy || gate.blocked}>
           Read
         </Button>
       </Group>

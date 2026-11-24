@@ -7,6 +7,7 @@ import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
 import type { SendAgainRequest } from './sendAgain'
 import { DeviceRegs, type SpiTransfer } from './DeviceRegs'
 import { HelpTip } from '../help/HelpTip'
+import { BusMasterNote, useBusMasterGate } from '../bench/busMasters'
 
 // The pod as SPI master on four LA pins: pins, mode, rate, then one full-duplex transfer per
 // Send (CS low for all the bytes). The tool is spi_transfer; it arms the SPI master for the call
@@ -61,6 +62,7 @@ export function SpiTab({
   onFilled?: () => void
   onChange?: () => void
 }) {
+  const gate = useBusMasterGate(call)
   const [pins, setPins] = useState<SpiPins>({ sck: null, mosi: null, miso: null, cs: null })
   const [mode, setMode] = useState('0')
   const [hz, setHz] = useState('1000000')
@@ -156,6 +158,7 @@ export function SpiTab({
 
   return (
     <Stack gap="xs" p="sm">
+      <BusMasterNote gate={gate} feature="The SPI master" />
       <Group gap="xs" align="flex-end" wrap="wrap">
         {pin('sck', 'SCK')}
         {pin('mosi', 'MOSI')}
@@ -189,7 +192,7 @@ export function SpiTab({
               error={txBad ? `whole bytes, up to ${SPI_MAX_BYTES}` : tooLong ? `up to ${SEND_MAX_BYTES} bytes with a capture` : undefined}
               ff="monospace"
             />
-            <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || !bytes || txBad || tooLong}>
+            <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || gate.blocked || !bytes || txBad || tooLong}>
               Send
             </Button>
             {sendCapture ? (
