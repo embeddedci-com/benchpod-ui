@@ -16,10 +16,9 @@ afterEach(cleanup)
 
 describe('bus master gate', () => {
   it('knows when the running image lacks the bus masters', () => {
-    expect(emulationWithoutMasters({ image: 2, version: 65, features: 4 })).toBe(true)
-    expect(emulationWithoutMasters({ image: 2, version: 64, features: 4 })).toBe(false)
-    expect(emulationWithoutMasters({ image: 2, version: 65, features: 0x24 })).toBe(false)
-    expect(emulationWithoutMasters({ image: 0, version: 65, features: 0x29 })).toBe(false)
+    expect(emulationWithoutMasters({ fpga_image: 'emu', gateware: 65 })).toBe(true)
+    expect(emulationWithoutMasters({ fpga_image: 'emu', gateware: 64 })).toBe(false)
+    expect(emulationWithoutMasters({ fpga_image: 'loop', gateware: 65 })).toBe(false)
     expect(emulationWithoutMasters(undefined)).toBe(false)
   })
 
@@ -32,15 +31,15 @@ describe('bus master gate', () => {
     return <BusMasterNote gate={gate} />
   }
   const mk = (img: object, sensors: object[]) =>
-    vi.fn(async (tool: string): Promise<BenchResult> => ({ text: '', structured: tool === 'fpga_image' ? img : { instances: sensors } })) as unknown as BenchCall
+    vi.fn(async (tool: string): Promise<BenchResult> => ({ text: '', structured: tool === 'status' ? img : { instances: sensors } })) as unknown as BenchCall
 
   it('shows "Stop the sensors first" on the emulation image with sensors running', async () => {
-    render(<MantineProvider><Probe call={mk({ image: 2, version: 65, features: 4 }, [{ instance: 'env', kind: 'i2c', running: true }])} /></MantineProvider>)
+    render(<MantineProvider><Probe call={mk({ fpga_image: 'emu', gateware: 65 }, [{ instance: 'env', kind: 'i2c', running: true }])} /></MantineProvider>)
     await waitFor(() => expect(screen.getByTestId('bus-master-note').textContent).toContain('Stop the sensors first'))
   })
 
   it('shows nothing when no sensor runs', async () => {
-    const call = mk({ image: 2, version: 65, features: 4 }, [])
+    const call = mk({ fpga_image: 'emu', gateware: 65 }, [])
     render(<MantineProvider><Probe call={call} /></MantineProvider>)
     await waitFor(() => expect(call).toHaveBeenCalledTimes(2))
     expect(screen.queryByTestId('bus-master-note')).toBeNull()

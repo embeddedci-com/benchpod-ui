@@ -7,19 +7,16 @@ import { benchData, type BenchCall } from './benchCall'
 // switches to the loop image by itself when no digital sensor runs; with I2C, SPI or UART
 // sensors running it refuses (BP0059). These controls disable themselves in that state.
 
-/** FPGA_FEATURES bit: the image has the bus masters (v65+: loop and deep). */
-export const FPGA_FEATURE_BUS_MASTERS = 0x20
 /** The first gateware without bus masters in the emulation image. */
 export const BUS_MASTERS_SPLIT_MIN_GW = 65
 
-type ImageInfo = { image?: number; name?: string; version?: number; features?: number }
+// The fields of `status` that tell the image: fpga_image ("loop", "deep", "emu") and gateware (the running version).
+type ImageInfo = { fpga_image?: string; gateware?: number }
 type SensorStatus = { instances?: { instance?: string; kind?: string; running?: boolean }[] }
 
-/** True when the running image is emulation without the bus masters (gateware 65 or later). */
-export function emulationWithoutMasters(img: ImageInfo | undefined): boolean {
-  if (!img || (img.image !== 2 && img.name !== 'emulation' && img.name !== 'emu')) return false
-  if ((img.features ?? 0) & FPGA_FEATURE_BUS_MASTERS) return false
-  return (img.version ?? 0) >= BUS_MASTERS_SPLIT_MIN_GW
+/** True when the running image is emulation (gateware 65 or later has no bus masters in it). */
+export function emulationWithoutMasters(st: ImageInfo | undefined): boolean {
+  return st?.fpga_image === 'emu' && (st.gateware ?? 0) >= BUS_MASTERS_SPLIT_MIN_GW
 }
 
 /** The names of the running I2C, SPI and UART (digital) sensors. */
@@ -45,7 +42,7 @@ export function useBusMasterGate(call: BenchCall, every = 5000): BusMasterGate {
   const refresh = useCallback(() => {
     void (async () => {
       try {
-        const img = benchData<ImageInfo>(await call('fpga_image', {}, { poll: true }))
+        const img = benchData<ImageInfo>(await call('status', {}, { poll: true }))
         if (!emulationWithoutMasters(img)) return setSensors([])
         setSensors(runningDigitalSensors(benchData<SensorStatus>(await call('sensor_status', {}, { poll: true }))))
       } catch {

@@ -27,7 +27,7 @@ const err = (text: string): BenchResult => ({ text, is_error: true })
 function fake(handlers: Record<string, (args: Record<string, unknown>) => BenchResult>) {
   const seen: { tool: string; args: Record<string, unknown>; poll?: boolean; approved?: boolean }[] = []
   const call: BenchCall = vi.fn(async (tool, args = {}, opts) => {
-    if (tool !== 'fpga_image') seen.push({ tool, args, poll: opts?.poll, approved: opts?.approved }) // the bus-master gate's poll
+    if (tool !== 'status') seen.push({ tool, args, poll: opts?.poll, approved: opts?.approved }) // the bus-master gate's poll
     const h = handlers[tool]
     return h ? h(args) : err(`unknown tool ${tool}`)
   })
