@@ -112,3 +112,4 @@ export {
 // FaultSpec and SegmentShape, are also generator types).
 export * as sensors from './sensors'
 export * from './bus/sequences'
+export { useBusMasterGate, BusMasterNote, emulationWithoutMasters, runningDigitalSensors, BUS_MASTERS_SPLIT_MIN_GW, type BusMasterGate } from './bench/busMasters'

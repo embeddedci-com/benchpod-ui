@@ -6,6 +6,7 @@ import { SEND_MAX_BYTES, type SendCapture } from './sendCapture'
 import type { SendAgainRequest } from './sendAgain'
 import { DeviceRegs } from './DeviceRegs'
 import { HelpTip } from '../help/HelpTip'
+import { BusMasterNote, useBusMasterGate } from '../bench/busMasters'
 
 // The pod as I2C master on two LA pins: open a session (pins, speed, pull-ups), send a write, a
 // read or both, scan the bus, close. The tools are i2c_open, i2c_transfer, i2c_scan, i2c_close;
@@ -66,6 +67,7 @@ export function I2cTab({
    */
   knownSession?: Session | null
 }) {
+  const gate = useBusMasterGate(call)
   const [sda, setSda] = useState<string | null>(wiredSda ? String(wiredSda) : null)
   const [scl, setScl] = useState<string | null>(wiredScl ? String(wiredScl) : null)
   const [hz, setHz] = useState('100000')
@@ -252,6 +254,7 @@ export function I2cTab({
   const isOpen = !!session?.open
   return (
     <Stack gap="xs" p="sm">
+      <BusMasterNote gate={gate} feature="The I2C master" />
       <Group gap="xs" align="flex-end" wrap="wrap">
         <Select size="xs" w={84} label="SDA" aria-label="SDA" data={LA} value={sda} onChange={setSda} placeholder={wiredSda ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
         <Select size="xs" w={84} label="SCL" aria-label="SCL" data={LA} value={scl} onChange={setScl} placeholder={wiredScl ? 'wiring' : 'not wired'} clearable comboboxProps={{ withinPortal: true }} />
@@ -271,7 +274,7 @@ export function I2cTab({
             ]}
           />
         </Stack>
-        <Button size="xs" onClick={() => void open()} loading={busy === 'open'} disabled={!!busy}>
+        <Button size="xs" onClick={() => void open()} loading={busy === 'open'} disabled={!!busy || gate.blocked}>
           {isOpen ? 'Open again' : 'Open'}
         </Button>
         <Button size="xs" variant="default" onClick={() => void close()} loading={busy === 'close'} disabled={!!busy}>
@@ -305,7 +308,7 @@ export function I2cTab({
         <Alert color="yellow" variant="light" p="xs" withCloseButton onClose={() => setNeedPull(false)}>
           <Group gap="xs" justify="space-between">
             <Text size="xs">I2C needs pull-ups, and the pod&apos;s are off on {pinNames || 'these pins'}.</Text>
-            <Button size="compact-xs" onClick={() => void pullAndOpen()} loading={busy === 'pull' || busy === 'open'} disabled={!!busy}>
+            <Button size="compact-xs" onClick={() => void pullAndOpen()} loading={busy === 'pull' || busy === 'open'} disabled={!!busy || gate.blocked}>
               Switch them on and open
             </Button>
           </Group>
@@ -354,11 +357,11 @@ export function I2cTab({
               max={capturing ? SEND_MAX_BYTES : 248}
               error={readTooLong ? `up to ${SEND_MAX_BYTES}` : undefined}
             />
-            <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || Number.isNaN(a) || writeBad || tooLong || readTooLong}>
+            <Button size="xs" onClick={() => void send()} loading={busy === 'send'} disabled={!!busy || gate.blocked || Number.isNaN(a) || writeBad || tooLong || readTooLong}>
               Send
             </Button>
             {sendCapture ? <Checkbox size="xs" label="Capture it" aria-label="Capture it" checked={capture} onChange={(e) => setCapture(e.currentTarget.checked)} mb={6} /> : null}
-            <Button size="xs" variant="light" onClick={() => void scan()} loading={busy === 'scan'} disabled={!!busy}>
+            <Button size="xs" variant="light" onClick={() => void scan()} loading={busy === 'scan'} disabled={!!busy || gate.blocked}>
               Scan
             </Button>
           </Group>
