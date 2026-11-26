@@ -64,6 +64,44 @@ export type WiringSignal = {
 
 export type UartParity = 'none' | 'even' | 'odd'
 
+/** The external INA current-monitor chips a profile can list (the SDK attaches them on connect). */
+export const MONITOR_CHIPS = ['ina226', 'ina228', 'ina238', 'ina219', 'ina260', 'ina3221'] as const
+export type MonitorChip = (typeof MONITOR_CHIPS)[number]
+export const MAX_WIRING_MONITORS = 8
+/** The averaging counts a chip takes (the INA219 has its own list). */
+export const MONITOR_AVERAGING: Record<MonitorChip, number[]> = {
+  ina226: [1, 4, 16, 64, 128, 256, 512, 1024],
+  ina228: [1, 4, 16, 64, 128, 256, 512, 1024],
+  ina238: [1, 4, 16, 64, 128, 256, 512, 1024],
+  ina219: [1, 2, 4, 8, 16, 32, 64, 128],
+  ina260: [1, 4, 16, 64, 128, 256, 512, 1024],
+  ina3221: [1, 4, 16, 64, 128, 256, 512, 1024],
+}
+/** The INA260 has its own 2 mohm shunt. */
+export const INA260_SHUNT_OHM = 0.002
+
+/**
+ * One external INA breakout (profile key `monitors`). `addr` is the 7-bit address as a number (64 is
+ * 0x40); the optional keys are left out when not set. sda/scl default to the profile's I2C pins.
+ */
+export type WiringMonitor = {
+  chip: MonitorChip
+  addr: number
+  /** Ohms; required except for the ina260. */
+  shunt_ohm?: number
+  /** Default `ina226@0x40` (the ina3221 adds `.1`); not "ext". */
+  name?: string
+  /** 1-3, ina3221 only (default 1). */
+  channel?: number
+  sda?: number
+  scl?: number
+  averaging?: number
+  /** Seconds, up to 0.01. */
+  conversion_time?: number
+  /** Amps. */
+  max_current?: number
+}
+
 /** The debug port a board with both SWD and JTAG pins wired is flashed through; null = automatic. */
 export type DebugPort = 'swd' | 'jtag'
 
@@ -125,6 +163,11 @@ export type Wiring = {
    * profile leaves the pull resistors as they are (profiles saved before this key).
    */
   pulls: WiringPulls | null
+  /**
+   * External INA current monitors the SDK attaches on connect (at most 8). Left out of the stored
+   * profile when empty (the editor patches it with `undefined`).
+   */
+  monitors: WiringMonitor[]
   /**
    * The control loop's INPUT sense chain — what the ADC is actually wired to, so the loop can
    * be configured in the unit the bench measures instead of raw ADC codes. Lives here rather
@@ -281,6 +324,7 @@ export const WIRING_DEFAULTS: Wiring = {
   signals: [],
   dut_dirs: {},
   pulls: null,
+  monitors: [],
   loop_input_unit: DEFAULT_LOOP_INPUT.unit,
   loop_input_mv_at_zero: DEFAULT_LOOP_INPUT.mvAtZero,
   loop_input_mv_per_unit: DEFAULT_LOOP_INPUT.mvPerUnit,
@@ -346,6 +390,7 @@ export const LOOP_INPUT_KEYS = [
 const PIN_KEYS = new Set<string>(WIRING_ROLES)
 const KNOWN_KEYS = new Set<string>(Object.keys(DEFAULTS))
 const SIGNAL_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/
+const MONITOR_NAME_RE = /^[A-Za-z][A-Za-z0-9_.@-]{0,31}$/
 
 function isCalPoint(v: unknown): v is StageCalPoint {
   return (
@@ -426,6 +471,8 @@ export function coerceStoredWiring(remote: Record<string, unknown>): StoredWirin
     const d = (DEFAULTS as Record<string, unknown>)[k]
     if (k === 'signals') {
       if (Array.isArray(v)) out.signals = v.filter(isRecord).map(coerceSignal)
+    } else if (k === 'monitors') {
+      if (Array.isArray(v)) out.monitors = v.filter(isRecord).map(coerceMonitor)
     } else if (k === 'dut_dirs') {
       if (isRecord(v)) out.dut_dirs = Object.fromEntries(Object.entries(v).filter(([, d]) => isDutDir(d)))
     } else if (k === 'pulls') {
@@ -522,6 +569,25 @@ export function withDutDir(w: Pick<Wiring, 'dut_dirs'>, name: string, dir: Wirin
   const out = Object.fromEntries(Object.entries(w.dut_dirs ?? {}).filter(([k]) => k.toLowerCase() !== name.toLowerCase()))
   if (dir) out[name] = dir
   return out
+}
+
+/** The default name of a monitor: `ina226@0x40` (the ina3221 adds `.1`). */
+export function monitorDefaultName(m: Pick<WiringMonitor, 'chip' | 'addr' | 'channel'>): string {
+  const base = `${m.chip}@0x${(Number.isFinite(m.addr) ? m.addr : 0).toString(16).padStart(2, '0')}`
+  return m.chip === 'ina3221' ? `${base}.${m.channel ?? 1}` : base
+}
+
+/** A stored monitor entry kept as written (wrong values stay so validation can flag them); not a record's keys it does not know. */
+function coerceMonitor(m: Record<string, unknown>): WiringMonitor {
+  const out: Record<string, unknown> = {
+    chip: (MONITOR_CHIPS as readonly string[]).includes(m.chip as string) ? m.chip : 'ina226',
+    addr: typeof m.addr === 'number' ? m.addr : 0,
+  }
+  for (const k of ['shunt_ohm', 'channel', 'sda', 'scl', 'averaging', 'conversion_time', 'max_current'] as const) {
+    if (typeof m[k] === 'number') out[k] = m[k]
+  }
+  if (typeof m.name === 'string') out.name = m.name
+  return out as WiringMonitor
 }
 
 function coerceSignal(s: Record<string, unknown>): WiringSignal {
@@ -729,6 +795,8 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
     }
   }
 
+  if (has('monitors')) validateMonitors(raw.monitors, effectiveWiring(raw), err)
+
   // Channel conflicts on the effective profile. Fields that already failed type/range checks are left
   // out, so a bad value doesn't also report a phantom conflict with the default it fell back to.
   const eff = effectiveWiring(raw)
@@ -741,6 +809,105 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
   }
 
   return { errors, warnings: pullWarnings(eff) }
+}
+
+function validateMonitors(list: unknown, eff: Wiring, err: (field: string, message: string) => void): void {
+  if (!Array.isArray(list)) {
+    err('monitors', 'monitors must be a list of monitor objects like {"chip": "ina226", "addr": 64, "shunt_ohm": 10}')
+    return
+  }
+  if (list.length > MAX_WIRING_MONITORS) {
+    err('monitors', `monitors has ${list.length} entries; at most ${MAX_WIRING_MONITORS}`)
+    return
+  }
+  const names = new Map<string, number>()
+  const addrs = new Map<string, number>()
+  const pins: { name: string; sda: number; scl: number }[] = []
+  const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+  list.forEach((raw, i) => {
+    const p = `monitors[${i}]`
+    if (!isRecord(raw)) {
+      err(p, `${p} must be an object like {"chip": "ina226", "addr": 64, "shunt_ohm": 10}`)
+      return
+    }
+    let ok = true
+    const bad = (field: string, message: string) => {
+      ok = false
+      err(field, message)
+    }
+    const chip = (MONITOR_CHIPS as readonly string[]).includes(raw.chip as string) ? (raw.chip as MonitorChip) : null
+    if (raw.chip === undefined) bad(`${p}.chip`, `${p}.chip is required: one of ${MONITOR_CHIPS.join(', ')}`)
+    else if (!chip) bad(`${p}.chip`, `${p}.chip must be one of ${MONITOR_CHIPS.join(', ')}`)
+    const maxAddr = chip === 'ina3221' ? 0x43 : 0x4f
+    if (raw.addr === undefined) bad(`${p}.addr`, `${p}.addr is required: the 7-bit I2C address, 0x40-0x4f`)
+    else if (!(typeof raw.addr === 'number' && Number.isInteger(raw.addr) && raw.addr >= 0x40 && raw.addr <= maxAddr))
+      bad(`${p}.addr`, `${p}.addr must be a whole number 64-${maxAddr} (0x40-0x${maxAddr.toString(16)})${chip === 'ina3221' ? ' for the ina3221' : ''}`)
+    if (chip === 'ina260') {
+      if (raw.shunt_ohm !== undefined && !(isNum(raw.shunt_ohm) && Math.abs(raw.shunt_ohm - INA260_SHUNT_OHM) < 1e-9))
+        bad(`${p}.shunt_ohm`, `${p}.shunt_ohm: the ina260 has a fixed 0.002 ohm shunt; leave it out or give 0.002`)
+    } else if (raw.shunt_ohm === undefined) {
+      if (chip) bad(`${p}.shunt_ohm`, `${p}.shunt_ohm is required: the shunt resistor in ohms (e.g. 10)`)
+    } else if (!(isNum(raw.shunt_ohm) && raw.shunt_ohm > 0 && raw.shunt_ohm <= 1e6)) {
+      bad(`${p}.shunt_ohm`, `${p}.shunt_ohm must be a number above 0 and at most 1000000 (ohms)`)
+    }
+    let channel = 0
+    if (raw.channel !== undefined) {
+      if (chip && chip !== 'ina3221') bad(`${p}.channel`, `${p}.channel is only for the ina3221; remove it for the ${chip}`)
+      else if (raw.channel !== 1 && raw.channel !== 2 && raw.channel !== 3) bad(`${p}.channel`, `${p}.channel must be 1, 2 or 3`)
+      else channel = raw.channel
+    } else if (chip === 'ina3221') channel = 1
+    if (raw.name !== undefined) {
+      if (typeof raw.name !== 'string' || !MONITOR_NAME_RE.test(raw.name))
+        bad(`${p}.name`, `${p}.name must start with a letter and use only letters, digits and _ . @ - (at most 32 characters)`)
+      else if (raw.name.toLowerCase() === 'ext') bad(`${p}.name`, `${p}.name "ext" is reserved for the external power rail; pick another name`)
+    }
+    const pin = (key: 'sda' | 'scl', profilePin: number | null): number => {
+      const v = raw[key]
+      if (v === undefined) {
+        if (profilePin === null) bad(`${p}.${key}`, `${p}.${key} is required here: the profile has no i2c_${key} to default to; give an LA channel 1-${LA_CHANNEL_COUNT}`)
+        return profilePin ?? 0
+      }
+      if (!isLaChannel(v)) {
+        bad(`${p}.${key}`, `${p}.${key} must be an LA channel 1-${LA_CHANNEL_COUNT}`)
+        return 0
+      }
+      return v
+    }
+    const sda = pin('sda', eff.i2c_sda)
+    const scl = pin('scl', eff.i2c_scl)
+    if (sda && sda === scl) bad(`${p}.scl`, `${p}.sda and scl are both LA${sda}; they must be different channels`)
+    if (raw.averaging !== undefined) {
+      const allowed = MONITOR_AVERAGING[chip ?? 'ina226']
+      if (!(typeof raw.averaging === 'number' && allowed.includes(raw.averaging)))
+        bad(`${p}.averaging`, `${p}.averaging must be one of ${allowed.join(', ')}${chip ? ` for the ${chip}` : ''}`)
+    }
+    if (raw.conversion_time !== undefined && !(isNum(raw.conversion_time) && raw.conversion_time > 0 && raw.conversion_time <= 0.01))
+      bad(`${p}.conversion_time`, `${p}.conversion_time must be a number of seconds above 0 and at most 0.01`)
+    if (raw.max_current !== undefined && !(isNum(raw.max_current) && raw.max_current > 0))
+      bad(`${p}.max_current`, `${p}.max_current must be a number of amps above 0`)
+    const known = ['chip', 'addr', 'shunt_ohm', 'name', 'channel', 'sda', 'scl', 'averaging', 'conversion_time', 'max_current']
+    for (const k of Object.keys(raw).sort())
+      if (!known.includes(k) && raw[k] !== undefined)
+        bad(`${p}.${k}`, `${p}.${k} is not a monitor field; monitors take ${known.slice(0, -1).join(', ')} and ${known[known.length - 1]}`)
+    if (!ok || !chip) return
+    const key = `${raw.addr}/${channel}`
+    const dupAddr = addrs.get(key)
+    if (dupAddr !== undefined)
+      bad(`${p}.addr`, chip === 'ina3221'
+        ? `${p}: address 0x${(raw.addr as number).toString(16)} channel ${channel} is already used by monitors[${dupAddr}]; each (addr, channel) can be used once`
+        : `${p}.addr 0x${(raw.addr as number).toString(16)} is already used by monitors[${dupAddr}]; each address can be used once`)
+    const name = typeof raw.name === 'string' ? raw.name : monitorDefaultName({ chip, addr: raw.addr as number, channel })
+    const dupName = names.get(name.toLowerCase())
+    if (dupName !== undefined) bad(`${p}.name`, `${p}.name "${name}" is already used by monitors[${dupName}]; monitor names must be unique (ignoring case)`)
+    if (!ok) return
+    addrs.set(key, i)
+    names.set(name.toLowerCase(), i)
+    pins.push({ name, sda, scl })
+  })
+  const first = pins[0]
+  const other = first && pins.find((x) => x.sda !== first.sda || x.scl !== first.scl)
+  if (first && other)
+    err('monitors', `all monitors must share one pair of I2C pins (the pod has one I2C master): "${first.name}" is on LA${first.sda}/LA${first.scl} but "${other.name}" is on LA${other.sda}/LA${other.scl}`)
 }
 
 export type LaChannelUser = { kind: 'role' | 'signal'; id: string; label: string; field: string }
@@ -811,7 +978,9 @@ export function wiringFieldErrors(w: Wiring, errors: WiringFieldIssue[]): Map<st
 export function wiringProfileJson(w: Wiring): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(w)) {
-    if (!(LOOP_INPUT_KEYS as readonly string[]).includes(k)) out[k] = v
+    if ((LOOP_INPUT_KEYS as readonly string[]).includes(k)) continue
+    if (k === 'monitors' && !w.monitors.length) continue // not set: left out
+    out[k] = v
   }
   return out
 }
