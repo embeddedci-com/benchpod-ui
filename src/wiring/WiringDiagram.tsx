@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react'
 import { Button, Group, Stack, Text } from '@mantine/core'
-import { laChannelMap, LA_CHANNEL_COUNT, type Wiring, type WiringRole } from './model'
+import { laChannelMap, LA_CHANNEL_COUNT, railLabel, type Wiring, type WiringRole } from './model'
 
 // The wiring profile drawn: the pod's LA channels on the left, what each is wired to on the right,
 // one line per wire colored by what it carries, the I/O voltage and power rail on top. A channel
@@ -49,7 +49,7 @@ export function WiringDiagram({
   const channels = useMemo(() => laChannelMap(wiring), [wiring])
   const height = TOP + LA_CHANNEL_COUNT * ROW + 16
   const io = wiring.la_mv ? `${wiring.la_mv / 1000} V` : 'not set'
-  const rail = wiring.efuse === 1 ? 'internal 5 V' : wiring.efuse === 2 ? 'external supply' : 'not set'
+  const rail = railLabel(wiring.efuse)
   const kinds = new Set<Kind>()
 
   const exportSvg = () => {

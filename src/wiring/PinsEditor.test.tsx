@@ -28,6 +28,21 @@ describe('PinsEditor', () => {
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('READY')
     expect(screen.getByText('No pull resistor on this pin.')).toBeTruthy()
   })
+  it('offers the J1 supplies as the board power only on a pod that has them', async () => {
+    const { unmount } = render(<MantineProvider><Host start={start} /></MantineProvider>)
+    fireEvent.click(screen.getByLabelText('Board power', { selector: 'input' }))
+    expect(screen.queryByRole('option', { name: 'J1 pin 17 (+3.3 V)' })).toBeNull()
+    unmount()
+    function WithRails() {
+      const [w, setW] = useState(start)
+      last = w
+      return <PinsEditor wiring={w} dutRails onChange={(p) => setW((x) => ({ ...x, ...p }))} />
+    }
+    render(<MantineProvider><WithRails /></MantineProvider>)
+    fireEvent.click(screen.getByLabelText('Board power', { selector: 'input' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'J1 pin 17 (+3.3 V)' }))
+    expect(last.efuse).toBe('j1_3v3')
+  })
   it('moves a role to the clicked pin', async () => {
     render(<MantineProvider><Host start={start} /></MantineProvider>)
     fireEvent.click(screen.getByRole('button', { name: /^LA3: free/ }))

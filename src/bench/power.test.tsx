@@ -41,4 +41,34 @@ describe('PowerControls', () => {
       { tool: 'power_on', args: { efuse: 1, wiring_profile: 'hwtest-a' } },
     ])
   })
+
+  it('shows the J1 supplies only when the pod reports them, and switches them by rail name', async () => {
+    const calls: { tool: string; args: Record<string, unknown> }[] = []
+    let j1: { v3v3: boolean; v1v8: boolean } | null = { v3v3: true, v1v8: true }
+    const call = vi.fn(async (tool: string, args: Record<string, unknown> = {}): Promise<BenchResult> => {
+      calls.push({ tool, args })
+      if (tool === 'power_status') return { text: '', structured: { internal: rail(false), external: rail(false), j1_rails: j1 } } as BenchResult
+      if (tool === 'wiring') return { text: '', structured: { profile_name: 'p', default_profile: 'p', profiles: [{ name: 'p' }], efuse: 'j1_3v3', la_voltage: 3.3 } } as BenchResult
+      return { text: 'ok', structured: {} } as BenchResult
+    }) as unknown as BenchCall
+    const { unmount } = render(
+      <MantineProvider>
+        <PowerControls call={call} pollMs={60_000} />
+      </MantineProvider>,
+    )
+    expect(await screen.findByText('J1 pin 17, +3.3 V')).toBeTruthy()
+    expect(await screen.findByText(/rail J1 pin 17 \(\+3\.3 V\)/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('switch', { name: /J1 pin 18/ }))
+    await waitFor(() => expect(calls.some((c) => c.tool === 'power_off')).toBe(true))
+    expect(calls.find((c) => c.tool === 'power_off')?.args).toEqual({ rail: 'j1_1v8' })
+    unmount()
+    j1 = null
+    render(
+      <MantineProvider>
+        <PowerControls call={call} pollMs={60_000} />
+      </MantineProvider>,
+    )
+    expect(await screen.findByText('Internal 5 V')).toBeTruthy()
+    expect(screen.queryByText('J1 pin 17, +3.3 V')).toBeNull()
+  })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  railLabel,
   coerceStoredWiring,
   effectiveWiring,
   firstFreeLaChannel,
@@ -69,6 +70,16 @@ describe('validateWiring', () => {
   it('accepts an empty object and the full defaults', () => {
     expect(validateWiring({})).toEqual({ errors: [], warnings: [] })
     expect(validateWiring(WIRING_DEFAULTS as unknown as Record<string, unknown>)).toEqual({ errors: [], warnings: [] })
+  })
+
+  it('takes the J1 supplies as the rail, and nothing else past 1 and 2', () => {
+    expect(validateWiring({ efuse: 'j1_3v3' }).errors).toEqual([])
+    expect(validateWiring({ efuse: 'j1_1v8' }).errors).toEqual([])
+    expect(fields(validateWiring({ efuse: 'j1_5v' }).errors)).toEqual(['efuse'])
+    expect(fields(validateWiring({ efuse: 'internal' }).errors)).toEqual(['efuse'])
+    expect(railLabel('j1_1v8')).toBe('J1 pin 18 (+1.8 V)')
+    expect(railLabel(2)).toBe('external supply')
+    expect(railLabel(0)).toBe('not set')
   })
 
   it('rejects unknown keys and wrong types/ranges', () => {

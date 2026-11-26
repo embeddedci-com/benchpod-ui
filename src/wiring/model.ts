@@ -67,12 +67,26 @@ export type UartParity = 'none' | 'even' | 'odd'
 /** The debug port a board with both SWD and JTAG pins wired is flashed through; null = automatic. */
 export type DebugPort = 'swd' | 'jtag'
 
+/** The switched supply pins on J1 of the digital board v4 (firmware hw fact `dut_rails`). */
+export type J1Rail = 'j1_3v3' | 'j1_1v8'
+export const J1_RAILS: readonly J1Rail[] = ['j1_3v3', 'j1_1v8']
+export const isJ1Rail = (v: unknown): v is J1Rail => v === 'j1_3v3' || v === 'j1_1v8'
+
+/** The profile's rail as a sentence fragment: "internal 5 V", "external supply", "J1 pin 17 (+3.3 V)", "not set". */
+export function railLabel(efuse: unknown): string {
+  if (efuse === 1) return 'internal 5 V'
+  if (efuse === 2) return 'external supply'
+  if (efuse === 'j1_3v3') return 'J1 pin 17 (+3.3 V)'
+  if (efuse === 'j1_1v8') return 'J1 pin 18 (+1.8 V)'
+  return 'not set'
+}
+
 export type Wiring = {
   version: number
   /** LA I/O-bank voltage in mV (1800 or 3300). Must be set on the pod before any LA op. */
   la_mv: number
-  /** Target-power eFuse: 1 = internal 5 V, 2 = external. */
-  efuse: number
+  /** The target-power rail: 1 = internal 5 V, 2 = external, or on a digital board v4 'j1_3v3' / 'j1_1v8' (the switched J1 pins 17 and 18). 0 = not set. */
+  efuse: number | J1Rail
   /** LA channel the pod samples (wire the DUT's TX here); null = not wired. */
   uart_rx: number | null
   /** LA channel the pod drives (the DUT's RX); null = not wired. */
@@ -618,7 +632,8 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
   if (has('version') && raw.version !== 1 && raw.version !== 2) err('version', 'version must be 1 or 2')
   if (has('la_mv') && raw.la_mv !== 1800 && raw.la_mv !== 3300)
     err('la_mv', 'la_mv must be 1800 or 3300 (the LA bank voltage in mV)')
-  if (has('efuse') && raw.efuse !== 1 && raw.efuse !== 2) err('efuse', 'efuse must be 1 (Internal 5 V, eFuse 1) or 2 (External, eFuse 2)')
+  if (has('efuse') && raw.efuse !== 1 && raw.efuse !== 2 && !isJ1Rail(raw.efuse))
+    err('efuse', "the rail must be 1 (Internal 5 V, eFuse 1), 2 (External, eFuse 2) or, on a digital board v4, 'j1_3v3' or 'j1_1v8' (J1 pins 17 and 18)")
   for (const role of WIRING_ROLES) {
     if (has(role) && raw[role] !== null && !isLaChannel(raw[role]))
       err(role, `${role} must be an LA channel 1-${LA_CHANNEL_COUNT}, or null when it isn't wired`)

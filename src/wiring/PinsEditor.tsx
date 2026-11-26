@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Box, Group, Paper, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { ownerLabel, pinWarnings, type LaPin } from '../bus/PinStrip'
-import { LA_CHANNEL_COUNT, WIRING_ROLES, type DebugPort, type UartParity, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
+import { isJ1Rail, J1_RAILS, LA_CHANNEL_COUNT, WIRING_ROLES, type DebugPort, type UartParity, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
 import {
   assignPin,
   PIN_ROLE_OPTIONS,
@@ -108,6 +108,7 @@ export function PinsEditor({
   disabled,
   initialPin = 1,
   live,
+  dutRails,
 }: {
   /** The profile, effective (defaults filled in). */
   wiring: Wiring
@@ -120,6 +121,8 @@ export function PinsEditor({
   initialPin?: number
   /** What the pod reports for each pin right now (la_pins), when the host reads it: warnings, live level, owner. */
   live?: LaPin[] | null
+  /** The pod reports the hw fact `dut_rails` (digital board v4): offer the J1 supplies as the board's power. */
+  dutRails?: boolean
 }) {
   const [sel, setSel] = useState(initialPin)
   const [picked, setPicked] = useState(false)
@@ -186,9 +189,13 @@ export function PinsEditor({
             { value: '0', label: 'Not set' },
             { value: '1', label: 'Internal 5 V' },
             { value: '2', label: 'External supply' },
+            // Only on a pod that has them (or when the profile already names one, so it shows).
+            ...(dutRails || isJ1Rail(wiring.efuse)
+              ? J1_RAILS.map((r) => ({ value: r, label: r === 'j1_3v3' ? 'J1 pin 17 (+3.3 V)' : 'J1 pin 18 (+1.8 V)' }))
+              : []),
           ]}
           value={String(wiring.efuse || 0)}
-          onChange={(v) => v != null && onChange({ efuse: Number(v) || undefined })}
+          onChange={(v) => v != null && onChange({ efuse: isJ1Rail(v) ? v : Number(v) || undefined })}
           allowDeselect={false}
           error={fieldErr('efuse')}
           disabled={disabled}
