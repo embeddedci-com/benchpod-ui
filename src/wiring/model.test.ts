@@ -390,9 +390,9 @@ describe('monitors', () => {
 })
 
 describe('supplyToolArgs', () => {
-  it('sends efuse for 5 V and external (every released MCP), supply only for the switched ones', () => {
-    expect(supplyToolArgs('5v')).toEqual({ efuse: 1 })
-    expect(supplyToolArgs('external')).toEqual({ efuse: 2 })
+  it('names every output by its supply', () => {
+    expect(supplyToolArgs('5v')).toEqual({ supply: '5v' })
+    expect(supplyToolArgs('external')).toEqual({ supply: 'external' })
     expect(supplyToolArgs('3v3')).toEqual({ supply: '3v3' })
     expect(supplyToolArgs('1v8')).toEqual({ supply: '1v8' })
   })

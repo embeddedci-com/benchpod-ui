@@ -3,7 +3,7 @@ import { Alert, Badge, Button, Checkbox, Divider, FileButton, Group, Select, Sta
 import { TerminalText } from '../results/ResultView'
 import { HelpTip } from '../help/HelpTip'
 import { debugPortMissing, debugTransport } from '../wiring/transport'
-import { isSwitchedSupply, supplyOf, supplyToolArgs } from '../wiring/model'
+import { supplyOf, supplyToolArgs } from '../wiring/model'
 import { BusMasterNote, useBusMasterGate } from './busMasters'
 import { benchData, benchError, type BenchCall } from './benchCall'
 
@@ -106,8 +106,8 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
       const args: Record<string, unknown> = { file: path, nreset, verify }
       if (target.trim()) args.target = target.trim()
       if (isBin) args.load_address = address
-      // The flash switches the 5 V or external supply only; a profile whose supply is 3.3 V or 1.8 V is powered by the user or the Power tab first.
-      if (powerFirst && !isSwitchedSupply(profileSupply)) args.target_power = profileSupply === 'external' ? 2 : 1
+      // Power the board from the profile's supply for the flash (any of the four; 3.3 V and 1.8 V on BenchPod v4).
+      if (powerFirst) args.target_power = profileSupply ?? '5v'
       const r = await call('flash', args)
       const e = benchError(r)
       if (e) setError(e)

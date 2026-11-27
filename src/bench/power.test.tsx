@@ -37,8 +37,8 @@ describe('PowerControls', () => {
     await waitFor(() => expect(calls.some((c) => c.tool === 'power_on')).toBe(true))
     const power = calls.filter((c) => c.tool === 'power_off' || c.tool === 'power_on')
     expect(power).toEqual([
-      { tool: 'power_off', args: { efuse: 1 } },
-      { tool: 'power_on', args: { efuse: 1, wiring_profile: 'hwtest-a' } },
+      { tool: 'power_off', args: { supply: '5v' } },
+      { tool: 'power_on', args: { supply: '5v', wiring_profile: 'hwtest-a' } },
     ])
   })
 
