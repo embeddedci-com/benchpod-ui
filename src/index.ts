@@ -67,6 +67,7 @@ export { CanTab, parseCanId, canDataOk } from './bus/CanTab'
 export { TransactionLog } from './bus/TransactionLog'
 export { logRow, loggedCall, nackWhere, type BusLogRow, type BusProto, type BusStatus } from './bus/busLog'
 export { PinsEditor, PIN_KIND_COLORS } from './wiring/PinsEditor'
+export { MonitorsEditor } from './wiring/MonitorsEditor'
 export { pinViews, assignPin, updateSignal, setPinPull, pinPullDirs, pullSwitchLabel, signalUse, nextSignalName, type PinView, type PinKind, type SignalUse } from './wiring/pins'
 export { debugPortMissing, debugTransport, jtagOnlyTarget, swdWired, jtagWired, type DebugTransport } from './wiring/transport'
 export { WiringDiagram, changedChannels } from './wiring/WiringDiagram'
@@ -101,6 +102,11 @@ export {
   withDutDir,
   type Wiring,
   type WiringSignal,
+  type WiringMonitor,
+  type MonitorChip,
+  MONITOR_CHIPS,
+  MAX_WIRING_MONITORS,
+  monitorDefaultName,
   type UartParity,
   type WiringDutDir,
   type WiringFieldIssue,

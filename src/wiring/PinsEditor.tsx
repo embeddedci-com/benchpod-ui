@@ -21,6 +21,7 @@ import {
 } from './pins'
 import { HelpTip } from '../help/HelpTip'
 import { jtagWired, swdWired } from './transport'
+import { MonitorsEditor } from './MonitorsEditor'
 
 // The Pins editor: one wiring profile, pin by pin. The 14 LA pins in two rows, colored by what
 // they carry, with a dot for a pull resistor that is on; click a pin to set what it is used for,
@@ -463,6 +464,8 @@ export function PinsEditor({
           )}
         </Stack>
       </Paper>
+
+      <MonitorsEditor wiring={wiring} onChange={onChange} errors={errors} disabled={disabled} />
 
       {warnings?.length ? (
         <Stack gap={2}>

@@ -304,3 +304,72 @@ describe('JTAG pins', () => {
     expect(coerceStoredWiring({ debug_port: 'x' }).debug_port).toBeUndefined()
   })
 })
+
+describe('monitors', () => {
+  const ok = { chip: 'ina226', addr: 64, shunt_ohm: 10 }
+  const check = (m: unknown) => validateWiring({ monitors: [m] }).errors
+  it('defaults to none, is left out of the profile JSON when empty and kept when set', () => {
+    expect(WIRING_DEFAULTS.monitors).toEqual([])
+    expect(effectiveWiring({}).monitors).toEqual([])
+    expect(wiringProfileJson(effectiveWiring({})).monitors).toBeUndefined()
+    expect(wiringProfileJson(effectiveWiring({ monitors: [ok] })).monitors).toEqual([ok])
+    expect(validateWiring({ monitors: [] }).errors).toEqual([])
+  })
+  it('keeps a stored entry as written and drops what is not a list', () => {
+    const full = { chip: 'ina3221', addr: 67, shunt_ohm: 0.1, name: 'dut', channel: 2, sda: 13, scl: 14, averaging: 16, conversion_time: 0.0011, max_current: 0.001 }
+    expect(coerceStoredWiring({ monitors: [full, 'x'] }).monitors).toEqual([full])
+    expect(coerceStoredWiring({ monitors: 'x' }).monitors).toBeUndefined()
+    expect(validateWiring({ monitors: [{ ...full, sda: undefined, scl: undefined }] }).errors).toEqual([])
+  })
+  it('accepts the schema examples', () => {
+    expect(check(ok)).toEqual([])
+    expect(check({ chip: 'ina260', addr: 65 })).toEqual([])
+    expect(check({ chip: 'ina260', addr: 65, shunt_ohm: 0.002 })).toEqual([])
+    expect(check({ chip: 'ina219', addr: 79, shunt_ohm: 0.1, averaging: 2 })).toEqual([])
+    expect(check({ chip: 'ina3221', addr: 67, shunt_ohm: 1, channel: 3 })).toEqual([])
+  })
+  it('flags each bad field on monitors[i].field', () => {
+    const cases: [unknown, string][] = [
+      [5, 'monitors[0]'],
+      [{ addr: 64, shunt_ohm: 1 }, 'monitors[0].chip'],
+      [{ ...ok, chip: 'ina999' }, 'monitors[0].chip'],
+      [{ chip: 'ina226', shunt_ohm: 1 }, 'monitors[0].addr'],
+      [{ ...ok, addr: 63 }, 'monitors[0].addr'],
+      [{ ...ok, addr: 80 }, 'monitors[0].addr'],
+      [{ ...ok, addr: '0x40' }, 'monitors[0].addr'],
+      [{ chip: 'ina3221', addr: 68, shunt_ohm: 1 }, 'monitors[0].addr'],
+      [{ chip: 'ina226', addr: 64 }, 'monitors[0].shunt_ohm'],
+      [{ ...ok, shunt_ohm: 0 }, 'monitors[0].shunt_ohm'],
+      [{ ...ok, shunt_ohm: 2e6 }, 'monitors[0].shunt_ohm'],
+      [{ chip: 'ina260', addr: 64, shunt_ohm: 0.1 }, 'monitors[0].shunt_ohm'],
+      [{ ...ok, channel: 1 }, 'monitors[0].channel'],
+      [{ chip: 'ina3221', addr: 64, shunt_ohm: 1, channel: 4 }, 'monitors[0].channel'],
+      [{ ...ok, name: '1dut' }, 'monitors[0].name'],
+      [{ ...ok, name: 'EXT' }, 'monitors[0].name'],
+      [{ ...ok, name: 'a'.repeat(33) }, 'monitors[0].name'],
+      [{ ...ok, sda: 15 }, 'monitors[0].sda'],
+      [{ ...ok, sda: 3, scl: 3 }, 'monitors[0].scl'],
+      [{ ...ok, averaging: 2 }, 'monitors[0].averaging'],
+      [{ chip: 'ina219', addr: 64, shunt_ohm: 1, averaging: 1024 }, 'monitors[0].averaging'],
+      [{ ...ok, conversion_time: 0 }, 'monitors[0].conversion_time'],
+      [{ ...ok, conversion_time: 0.02 }, 'monitors[0].conversion_time'],
+      [{ ...ok, max_current: -1 }, 'monitors[0].max_current'],
+      [{ ...ok, gain: 2 }, 'monitors[0].gain'],
+    ]
+    for (const [m, field] of cases) expect(fields(check(m)), JSON.stringify(m)).toEqual([field])
+    expect(validateWiring({ monitors: { chip: 'ina226' } }).errors.map((e) => e.field)).toEqual(['monitors'])
+    expect(validateWiring({ monitors: Array(9).fill(ok) }).errors.map((e) => e.field)).toEqual(['monitors'])
+  })
+  it('wants unique addresses (per channel for the ina3221) and names, and one pair of pins', () => {
+    expect(fields(validateWiring({ monitors: [ok, { ...ok, name: 'b' }] }).errors)).toEqual(['monitors[1].addr'])
+    expect(validateWiring({ monitors: [{ chip: 'ina3221', addr: 64, shunt_ohm: 1 }, { chip: 'ina3221', addr: 64, shunt_ohm: 1, channel: 2 }] }).errors).toEqual([])
+    expect(fields(validateWiring({ monitors: [{ ...ok, name: 'Dut' }, { ...ok, addr: 65, name: 'dut' }] }).errors)).toEqual(['monitors[1].name'])
+    expect(fields(validateWiring({ monitors: [{ ...ok, name: 'ina226@0x41' }, { ...ok, addr: 65 }] }).errors)).toEqual(['monitors[1].name'])
+    expect(fields(validateWiring({ monitors: [ok, { ...ok, addr: 65, sda: 13, scl: 14 }] }).errors)).toEqual(['monitors'])
+    expect(validateWiring({ monitors: [{ ...ok, sda: 13, scl: 14 }, { ...ok, addr: 65, sda: 13, scl: 14 }] }).errors).toEqual([])
+  })
+  it('needs pins when the profile has no I2C pins to default to', () => {
+    expect(fields(validateWiring({ i2c_sda: null, monitors: [ok] }).errors)).toEqual(['monitors[0].sda'])
+    expect(validateWiring({ i2c_sda: null, i2c_scl: null, monitors: [{ ...ok, sda: 13, scl: 14 }] }).errors).toEqual([])
+  })
+})
