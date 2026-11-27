@@ -111,11 +111,11 @@ describe('benchOutputs', () => {
       ({ kind: 'tool', id, call: { id, name, arguments: '{}' }, result: { text: '', structured } }) as never
     const rail = { enabled: true, fault: false, state_valid: true, monitor_ok: true, bus_voltage: 5, current: 0.04 }
     const out = benchOutputs([
-      tool('a', 'measure_power', { efuse: 1, rate_hz: 100, n: 100, duration: 1, avg_current: 0.04, min_current: 0.03, peak_current: 0.05, avg_voltage: 5, energy: 0.2, avg_power: 0.2, fault: false }),
-      tool('b', 'power_status', { internal: rail, external: { ...rail, enabled: false } }),
+      tool('a', 'measure_power', { supply: '5v', rate_hz: 100, n: 100, duration: 1, avg_current: 0.04, min_current: 0.03, peak_current: 0.05, avg_voltage: 5, energy: 0.2, avg_power: 0.2, fault: false }),
+      tool('b', 'power_status', { supplies: { '5v': rail, external: { ...rail, enabled: false } }, internal: rail, external: { ...rail, enabled: false } }),
     ])
     expect(out.power.map((p) => p.id)).toEqual(['a', 'b'])
-    expect(out.power[1].title).toContain('Internal 5 V')
+    expect(out.power[1].title).toContain('5 V')
     expect(out.captures).toEqual([])
   })
 

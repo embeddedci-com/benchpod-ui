@@ -4,7 +4,7 @@
 //
 /**
  * Per-device wiring profile (schema v1): the bench's single description of which DUT signal is on
- * which LA channel, plus baud / I2C address / SWD target / target-power rail. Persisted server-side
+ * which LA channel, plus baud / I2C address / SWD target / target-power supply. Persisted server-side
  * on the org-owned device (parameter `wiring`), so it's shared across the org and survives browser
  * changes — set your bench wiring once and every tab, session, user and the Python SDK (`bp.wiring`)
  * reads the same profile. Loaded on first use, saved (debounced) on change.
@@ -89,7 +89,7 @@ export type WiringMonitor = {
   addr: number
   /** Ohms; required except for the ina260. */
   shunt_ohm?: number
-  /** Default `ina226@0x40` (the ina3221 adds `.1`); not "ext". */
+  /** Default `ina226@0x40` (the ina3221 adds `.1`). The power tools select a monitor by this name. */
   name?: string
   /** 1-3, ina3221 only (default 1). */
   channel?: number
@@ -105,26 +105,41 @@ export type WiringMonitor = {
 /** The debug port a board with both SWD and JTAG pins wired is flashed through; null = automatic. */
 export type DebugPort = 'swd' | 'jtag'
 
-/** The switched supply pins on J1 of the digital board v4 (firmware hw fact `dut_rails`). */
-export type J1Rail = 'j1_3v3' | 'j1_1v8'
-export const J1_RAILS: readonly J1Rail[] = ['j1_3v3', 'j1_1v8']
-export const isJ1Rail = (v: unknown): v is J1Rail => v === 'j1_3v3' || v === 'j1_1v8'
+/** The DUT power output (profile key `supply`): what the DUT gets, not which connector it comes from. */
+export type Supply = '5v' | 'external' | '3v3' | '1v8'
+export const SUPPLIES: readonly Supply[] = ['5v', 'external', '3v3', '1v8']
+/** The two switched supplies of BenchPod v4 (firmware hw fact `supply_3v3_1v8`, J1 pins 17 and 18). */
+export const SWITCHED_SUPPLIES: readonly Supply[] = ['3v3', '1v8']
+export const isSupply = (v: unknown): v is Supply => SUPPLIES.includes(v as Supply)
+export const isSwitchedSupply = (v: unknown): v is Supply => v === '3v3' || v === '1v8'
 
-/** The profile's rail as a sentence fragment: "internal 5 V", "external supply", "J1 pin 17 (+3.3 V)", "not set". */
-export function railLabel(efuse: unknown): string {
-  if (efuse === 1) return 'internal 5 V'
-  if (efuse === 2) return 'external supply'
-  if (efuse === 'j1_3v3') return 'J1 pin 17 (+3.3 V)'
-  if (efuse === 'j1_1v8') return 'J1 pin 18 (+1.8 V)'
-  return 'not set'
+/** Button and select labels. */
+export const SUPPLY_LABELS: Record<Supply, string> = { '5v': '5 V', external: 'External', '3v3': '3.3 V', '1v8': '1.8 V' }
+
+/** The supply a stored or reported value names: a supply string, or the legacy eFuse number or `internal`. */
+export function supplyOf(v: unknown): Supply | null {
+  if (isSupply(v)) return v
+  if (v === 1 || v === 'internal') return '5v'
+  if (v === 2) return 'external'
+  return null
+}
+
+/** The legacy `efuse` number of a supply (1 = 5 V, 2 = external); undefined for the switched ones. */
+export const legacyEfuse = (s: unknown): 1 | 2 | undefined => (s === '5v' ? 1 : s === 'external' ? 2 : undefined)
+
+/** The profile's supply as a sentence fragment: "5 V", "external supply", "3.3 V", "not set". Accepts the legacy efuse number too. */
+export function supplyLabel(supply: unknown): string {
+  const s = supplyOf(supply)
+  if (s === 'external') return 'external supply'
+  return s ? SUPPLY_LABELS[s] : 'not set'
 }
 
 export type Wiring = {
   version: number
   /** LA I/O-bank voltage in mV (1800 or 3300). Must be set on the pod before any LA op. */
   la_mv: number
-  /** The target-power rail: 1 = internal 5 V, 2 = external, or on a digital board v4 'j1_3v3' / 'j1_1v8' (the switched J1 pins 17 and 18). 0 = not set. */
-  efuse: number | J1Rail
+  /** The DUT power output: '5v', 'external', or on a BenchPod v4 '3v3' / '1v8'. '' = not set. The legacy profile key `efuse` (1/2) is read as 5v/external. */
+  supply: Supply | ''
   /** LA channel the pod samples (wire the DUT's TX here); null = not wired. */
   uart_rx: number | null
   /** LA channel the pod drives (the DUT's RX); null = not wired. */
@@ -312,7 +327,7 @@ export function pullLabel(p: LaPull): string {
 export const WIRING_DEFAULTS: Wiring = {
   version: 1,
   la_mv: 3300,
-  efuse: 1,
+  supply: '5v',
   uart_rx: 5,
   uart_tx: 4,
   uart_baud: 115200,
@@ -360,13 +375,13 @@ export const WIRING_DEFAULTS: Wiring = {
 const DEFAULTS = WIRING_DEFAULTS
 
 /** The base of a version 2 profile (stored on the pod): nothing wired, no I/O voltage (la_mv 0), no
- *  power rail (efuse 0), no I2C address (''). Only plain call settings keep a value (the UART baud,
+ *  power supply (supply ''), no I2C address (''). Only plain call settings keep a value (the UART baud,
  *  the SWD reset, and the control loop's input scale the Generator tab divides by). */
 export const WIRING_UNDEFINED: Wiring = {
   ...WIRING_DEFAULTS,
   version: 2,
   la_mv: 0,
-  efuse: 0,
+  supply: '',
   uart_rx: null,
   uart_tx: null,
   i2c_sda: null,
@@ -402,7 +417,8 @@ export const LOOP_INPUT_KEYS = [
 ] as const
 
 const PIN_KEYS = new Set<string>(WIRING_ROLES)
-const KNOWN_KEYS = new Set<string>(Object.keys(DEFAULTS))
+// `efuse` is the legacy spelling of `supply` (1 = 5v, 2 = external): read, never kept on the Wiring.
+const KNOWN_KEYS = new Set<string>([...Object.keys(DEFAULTS), 'efuse'])
 const SIGNAL_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/
 const MONITOR_NAME_RE = /^[A-Za-z][A-Za-z0-9_.@-]{0,31}$/
 
@@ -478,6 +494,16 @@ export function coerceStoredWiring(remote: Record<string, unknown>): StoredWirin
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(remote)) {
     if (!KNOWN_KEYS.has(k)) continue
+    if (k === 'efuse') {
+      // Legacy key: only when the profile has no `supply`.
+      const legacy = v === 1 ? '5v' : v === 2 ? 'external' : null
+      if (legacy && !isSupply(remote.supply)) out.supply = legacy
+      continue
+    }
+    if (k === 'supply') {
+      if (isSupply(v)) out.supply = v
+      continue
+    }
     if (PIN_KEYS.has(k)) {
       if (v === null || isLaChannel(v)) out[k] = v
       continue
@@ -698,8 +724,11 @@ export function validateWiring(raw: Record<string, unknown>): WiringIssues {
   if (has('version') && raw.version !== 1 && raw.version !== 2) err('version', 'version must be 1 or 2')
   if (has('la_mv') && raw.la_mv !== 1800 && raw.la_mv !== 3300)
     err('la_mv', 'la_mv must be 1800 or 3300 (the LA bank voltage in mV)')
-  if (has('efuse') && raw.efuse !== 1 && raw.efuse !== 2 && !isJ1Rail(raw.efuse))
-    err('efuse', "the rail must be 1 (Internal 5 V, eFuse 1), 2 (External, eFuse 2) or, on a digital board v4, 'j1_3v3' or 'j1_1v8' (J1 pins 17 and 18)")
+  if (has('supply') && !isSupply(raw.supply))
+    err('supply', "the supply must be '5v', 'external' or, on a BenchPod v4, '3v3' or '1v8'")
+  if (has('efuse') && raw.efuse !== 1 && raw.efuse !== 2) err('efuse', "efuse is the old name of supply: 1 (5v) or 2 (external); use supply instead")
+  else if (has('efuse') && has('supply') && isSupply(raw.supply) && legacyEfuse(raw.supply) !== raw.efuse)
+    err('supply', 'supply and the old efuse key disagree; remove efuse')
   for (const role of WIRING_ROLES) {
     if (has(role) && raw[role] !== null && !isLaChannel(raw[role]))
       err(role, `${role} must be an LA channel 1-${LA_CHANNEL_COUNT}, or null when it isn't wired`)
@@ -874,7 +903,6 @@ function validateMonitors(list: unknown, eff: Wiring, err: (field: string, messa
     if (raw.name !== undefined) {
       if (typeof raw.name !== 'string' || !MONITOR_NAME_RE.test(raw.name))
         bad(`${p}.name`, `${p}.name must start with a letter and use only letters, digits and _ . @ - (at most 32 characters)`)
-      else if (raw.name.toLowerCase() === 'ext') bad(`${p}.name`, `${p}.name "ext" is reserved for the external power rail; pick another name`)
     }
     const pin = (key: 'sda' | 'scl', profilePin: number | null): number => {
       const v = raw[key]
@@ -997,6 +1025,9 @@ export function wiringProfileJson(w: Wiring): Record<string, unknown> {
     if (k === 'monitors' && !w.monitors.length) continue // not set: left out
     out[k] = v
   }
+  // Pods on firmware without the `supply` key read `efuse`: write both for the two eFuse supplies.
+  const efuse = legacyEfuse(w.supply)
+  if (efuse) out.efuse = efuse
   return out
 }
 

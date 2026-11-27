@@ -15,7 +15,7 @@ afterEach(cleanup)
 const w = effectiveWiring({
   version: 2,
   la_mv: 3300,
-  efuse: 1,
+  supply: '5v',
   uart_rx: 3,
   uart_tx: 4,
   uart_baud: 115200,
@@ -31,7 +31,7 @@ describe('boardSheet', () => {
   it('puts the profile on the header pins and lists what to connect', () => {
     const s = boardSheet(w, 'j1', 'process-node')
     expect(s.pins).toHaveLength(22)
-    expect(s.summary).toBe('I/O 3.3 V, target power internal 5 V, UART 115200 8N1, SWD stm32f4x')
+    expect(s.summary).toBe('I/O 3.3 V, target power 5 V, UART 115200 8N1, SWD stm32f4x')
     const rows = sheetRows(s)
     expect(rows.map((r) => [r.pins, r.usedFor, r.connect, r.pull])).toEqual([
       ['3', 'UART RX', 'board TX', 'pull-up 2.2k'],

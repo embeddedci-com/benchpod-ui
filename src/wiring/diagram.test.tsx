@@ -15,8 +15,8 @@ afterEach(cleanup)
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>)
 
 describe('WiringDiagram', () => {
-  it('draws every LA channel, what it is wired to, and the I/O voltage and rail', () => {
-    const w = effectiveWiring({ version: 2, la_mv: 1800, efuse: 2, uart_rx: 3, swd_swclk: 11 })
+  it('draws every LA channel, what it is wired to, and the I/O voltage and supply', () => {
+    const w = effectiveWiring({ version: 2, la_mv: 1800, supply: 'external', uart_rx: 3, swd_swclk: 11 })
     wrap(<WiringDiagram wiring={w} title="k66" />)
     expect(screen.getByText('LA14')).toBeTruthy()
     expect(screen.getByText('I/O voltage 1.8 V, target power external supply')).toBeTruthy()

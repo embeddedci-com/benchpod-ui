@@ -3,7 +3,7 @@ import { Alert, Badge, Button, Checkbox, Divider, FileButton, Group, Select, Sta
 import { TerminalText } from '../results/ResultView'
 import { HelpTip } from '../help/HelpTip'
 import { debugPortMissing, debugTransport } from '../wiring/transport'
-import { isJ1Rail } from '../wiring/model'
+import { isSwitchedSupply, supplyOf } from '../wiring/model'
 import { BusMasterNote, useBusMasterGate } from './busMasters'
 import { benchData, benchError, type BenchCall } from './benchCall'
 
@@ -19,7 +19,7 @@ export type FirmwareStore = {
 }
 
 type FlashResult = { ok: boolean; returncode: number; target_unreachable: boolean; stalled: boolean; stdout_tail: string; stderr_tail: string }
-type Wiring = { efuse?: number | string; swd_target?: string; swd_nreset?: boolean; profile?: Record<string, unknown> }
+type Wiring = { supply?: string; efuse?: number | string; swd_target?: string; swd_nreset?: boolean; profile?: Record<string, unknown> }
 
 /**
  * The last flash and boot log, kept while the page lives: a host that unmounts the Flash tab when
@@ -41,6 +41,8 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
   const [target, setTarget] = useState('')
   const [nreset, setNreset] = useState(false)
   const [address, setAddress] = useState('0x08000000')
+  // The profile's supply: `supply`, else the legacy `efuse` (1 or 2).
+  const profileSupply = supplyOf(wiring?.supply) ?? supplyOf(wiring?.efuse)
   const [powerFirst, setPowerFirst] = useState(true)
   const [verify, setVerify] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
@@ -104,8 +106,8 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
       const args: Record<string, unknown> = { file: path, nreset, verify }
       if (target.trim()) args.target = target.trim()
       if (isBin) args.load_address = address
-      // The flash switches an eFuse rail only; a profile whose rail is a J1 supply is powered by the user or the Power tab first.
-      if (powerFirst && !isJ1Rail(wiring?.efuse)) args.target_power = wiring?.efuse === 2 ? 2 : 1
+      // The flash switches the 5 V or external supply only; a profile whose supply is 3.3 V or 1.8 V is powered by the user or the Power tab first.
+      if (powerFirst && !isSwitchedSupply(profileSupply)) args.target_power = profileSupply === 'external' ? 2 : 1
       const r = await call('flash', args)
       const e = benchError(r)
       if (e) setError(e)
@@ -128,13 +130,13 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
       const e = benchError(r)
       // The console has the UART open: power-cycle, and the boot log shows in the console.
       if (e && /in use by uart/i.test(e)) {
-        const rail = isJ1Rail(wiring?.efuse) ? wiring?.efuse : wiring?.efuse === 2 ? 'external' : 'internal'
-        const off = await call('power_off', { rail })
+        const supply = profileSupply ?? '5v'
+        const off = await call('power_off', { supply })
         if (off.declined) return
         const offErr = benchError(off)
         if (offErr) return setError(offErr)
         await sleep(500)
-        const on = await call('power_on', { rail }, { approved: true })
+        const on = await call('power_on', { supply }, { approved: true })
         const onErr = benchError(on)
         if (onErr) return setError(onErr)
         setBoot(null)

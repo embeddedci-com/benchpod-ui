@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  railLabel,
+  supplyLabel,
+  legacyEfuse,
   coerceStoredWiring,
   effectiveWiring,
   firstFreeLaChannel,
@@ -25,7 +26,7 @@ describe('effectiveWiring', () => {
     expect(WIRING_DEFAULTS).toMatchObject({
       version: 1,
       la_mv: 3300,
-      efuse: 1,
+      supply: '5v',
       uart_rx: 5,
       uart_tx: 4,
       uart_baud: 115200,
@@ -72,14 +73,28 @@ describe('validateWiring', () => {
     expect(validateWiring(WIRING_DEFAULTS as unknown as Record<string, unknown>)).toEqual({ errors: [], warnings: [] })
   })
 
-  it('takes the J1 supplies as the rail, and nothing else past 1 and 2', () => {
-    expect(validateWiring({ efuse: 'j1_3v3' }).errors).toEqual([])
-    expect(validateWiring({ efuse: 'j1_1v8' }).errors).toEqual([])
-    expect(fields(validateWiring({ efuse: 'j1_5v' }).errors)).toEqual(['efuse'])
-    expect(fields(validateWiring({ efuse: 'internal' }).errors)).toEqual(['efuse'])
-    expect(railLabel('j1_1v8')).toBe('J1 pin 18 (+1.8 V)')
-    expect(railLabel(2)).toBe('external supply')
-    expect(railLabel(0)).toBe('not set')
+  it('takes the four supplies, and the legacy efuse 1 and 2', () => {
+    for (const supply of ['5v', 'external', '3v3', '1v8']) expect(validateWiring({ supply }).errors).toEqual([])
+    expect(fields(validateWiring({ supply: 'j1_3v3' }).errors)).toEqual(['supply'])
+    expect(fields(validateWiring({ supply: 'internal' }).errors)).toEqual(['supply'])
+    expect(validateWiring({ efuse: 2 }).errors).toEqual([])
+    expect(fields(validateWiring({ efuse: 3 }).errors)).toEqual(['efuse'])
+    expect(validateWiring({ supply: '5v', efuse: 1 }).errors).toEqual([])
+    expect(fields(validateWiring({ supply: 'external', efuse: 1 }).errors)).toEqual(['supply'])
+    expect(supplyLabel('1v8')).toBe('1.8 V')
+    expect(supplyLabel('external')).toBe('external supply')
+    expect(supplyLabel(1)).toBe('5 V')
+    expect(supplyLabel('')).toBe('not set')
+  })
+
+  it('reads the legacy efuse key as the supply, and writes both for 5v and external', () => {
+    expect(effectiveWiring({ efuse: 2 }).supply).toBe('external')
+    expect(effectiveWiring({ version: 2, efuse: 1 }).supply).toBe('5v')
+    expect(effectiveWiring({ supply: '3v3', efuse: 1 }).supply).toBe('3v3')
+    expect(effectiveWiring({ version: 2, efuse: 'internal' }).supply).toBe('')
+    expect(legacyEfuse('external')).toBe(2)
+    expect(wiringProfileJson({ ...WIRING_DEFAULTS, supply: 'external' })).toMatchObject({ supply: 'external', efuse: 2 })
+    expect(wiringProfileJson({ ...WIRING_DEFAULTS, supply: '1v8' })).not.toHaveProperty('efuse')
   })
 
   it('rejects unknown keys and wrong types/ranges', () => {
@@ -87,7 +102,7 @@ describe('validateWiring', () => {
       colour: 'red',
       version: 3,
       la_mv: 2500,
-      efuse: 3,
+      supply: 'j1_3v3',
       uart_rx: 0,
       uart_tx: 1.5,
       uart_baud: 299,
@@ -103,7 +118,7 @@ describe('validateWiring', () => {
         'colour',
         'version',
         'la_mv',
-        'efuse',
+        'supply',
         'uart_rx',
         'uart_tx',
         'uart_baud',
@@ -260,7 +275,7 @@ describe('version 2 profiles', () => {
     expect(w.version).toBe(2)
     expect(w.uart_rx).toBe(7)
     expect([w.uart_tx, w.swd_swclk, w.swd_swdio, w.i2c_sda, w.i2c_scl]).toEqual([null, null, null, null, null])
-    expect([w.la_mv, w.efuse, w.i2c_addr]).toEqual([0, 0, ''])
+    expect([w.la_mv, w.supply, w.i2c_addr]).toEqual([0, '', ''])
     expect(w.uart_baud).toBe(115200)
   })
   it('keep version 1 meaning the reference bench', () => {
@@ -345,7 +360,6 @@ describe('monitors', () => {
       [{ ...ok, channel: 1 }, 'monitors[0].channel'],
       [{ chip: 'ina3221', addr: 64, shunt_ohm: 1, channel: 4 }, 'monitors[0].channel'],
       [{ ...ok, name: '1dut' }, 'monitors[0].name'],
-      [{ ...ok, name: 'EXT' }, 'monitors[0].name'],
       [{ ...ok, name: 'a'.repeat(33) }, 'monitors[0].name'],
       [{ ...ok, sda: 15 }, 'monitors[0].sda'],
       [{ ...ok, sda: 3, scl: 3 }, 'monitors[0].scl'],
