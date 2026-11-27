@@ -13,7 +13,7 @@
 // the SVG download all show the same drawing. Colors are fixed hex values (no CSS variables): the
 // SVG must look the same outside the app, in a file or on paper.
 
-import { LA_PULLS, WIRING_ROLES, type Wiring, type WiringRole } from './model'
+import { LA_PULLS, railLabel, WIRING_ROLES, type Wiring, type WiringRole } from './model'
 import { pinViews, roleKind, signalUse, type PinKind } from './pins'
 
 export type BoardHeader = 'j1' | 'front'
@@ -160,7 +160,7 @@ function fmtVolts(mv: number) {
 function summaryOf(w: Wiring, uartUsed: boolean, swdUsed: boolean, jtagUsed: boolean): string {
   const parts = [
     `I/O ${w.la_mv ? fmtVolts(w.la_mv) : 'not set'}`,
-    `target power ${w.efuse === 1 ? 'internal 5 V' : w.efuse === 2 ? 'external supply' : 'not set'}`,
+    `target power ${railLabel(w.efuse)}`,
   ]
   if (uartUsed && w.uart_baud) {
     const parity = w.uart_parity === 'even' ? 'E' : w.uart_parity === 'odd' ? 'O' : 'N'
