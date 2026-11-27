@@ -17,14 +17,14 @@ afterEach(cleanup)
 const rail = (enabled: boolean) => ({ enabled, current: enabled ? 0.05 : 0, bus_voltage: 5, fault: false })
 
 describe('PowerControls', () => {
-  it('Restart board switches the rail that is on off and on again, with the pins profile', async () => {
+  it('Restart board switches the supply that is on off and on again, with the pins profile', async () => {
     const calls: { tool: string; args: Record<string, unknown> }[] = []
     const call = vi.fn(async (tool: string, args: Record<string, unknown> = {}, opts?: { approved?: boolean }): Promise<BenchResult> => {
       calls.push({ tool, args })
       if ((tool === 'power_on' || tool === 'power_off') && !opts?.approved) throw new Error('a restart sends both calls approved')
-      if (tool === 'power_status') return { text: '', structured: { internal: rail(true), external: rail(false) } } as BenchResult
+      if (tool === 'power_status') return { text: '', structured: { supplies: { '5v': rail(true), external: rail(false) }, internal: rail(true), external: rail(false) } } as BenchResult
       if (tool === 'wiring')
-        return { text: '', structured: { profile_name: 'hwtest-a', default_profile: 'hwtest-a', profiles: [{ name: 'hwtest-a' }], efuse: 1, la_voltage: 3.3 } } as BenchResult
+        return { text: '', structured: { profile_name: 'hwtest-a', default_profile: 'hwtest-a', profiles: [{ name: 'hwtest-a' }], supply: '5v', la_voltage: 3.3 } } as BenchResult
       return { text: 'ok', structured: {} } as BenchResult
     }) as unknown as BenchCall
     render(
@@ -37,18 +37,22 @@ describe('PowerControls', () => {
     await waitFor(() => expect(calls.some((c) => c.tool === 'power_on')).toBe(true))
     const power = calls.filter((c) => c.tool === 'power_off' || c.tool === 'power_on')
     expect(power).toEqual([
-      { tool: 'power_off', args: { efuse: 1 } },
-      { tool: 'power_on', args: { efuse: 1, wiring_profile: 'hwtest-a' } },
+      { tool: 'power_off', args: { supply: '5v' } },
+      { tool: 'power_on', args: { supply: '5v', wiring_profile: 'hwtest-a' } },
     ])
   })
 
-  it('shows the J1 supplies only when the pod reports them, and switches them by rail name', async () => {
+  it('shows 3.3 V and 1.8 V only when the pod reports them, and switches them by supply name', async () => {
     const calls: { tool: string; args: Record<string, unknown> }[] = []
-    let j1: { v3v3: boolean; v1v8: boolean } | null = { v3v3: true, v1v8: true }
+    let switched = true
     const call = vi.fn(async (tool: string, args: Record<string, unknown> = {}): Promise<BenchResult> => {
       calls.push({ tool, args })
-      if (tool === 'power_status') return { text: '', structured: { internal: rail(false), external: rail(false), j1_rails: j1 } } as BenchResult
-      if (tool === 'wiring') return { text: '', structured: { profile_name: 'p', default_profile: 'p', profiles: [{ name: 'p' }], efuse: 'j1_3v3', la_voltage: 3.3 } } as BenchResult
+      if (tool === 'power_status')
+        return {
+          text: '',
+          structured: { supplies: { '5v': rail(false), external: rail(false), ...(switched ? { '3v3': { enabled: true }, '1v8': { enabled: true } } : {}) } },
+        } as BenchResult
+      if (tool === 'wiring') return { text: '', structured: { profile_name: 'p', default_profile: 'p', profiles: [{ name: 'p' }], supply: '3v3', la_voltage: 3.3 } } as BenchResult
       return { text: 'ok', structured: {} } as BenchResult
     }) as unknown as BenchCall
     const { unmount } = render(
@@ -56,19 +60,34 @@ describe('PowerControls', () => {
         <PowerControls call={call} pollMs={60_000} />
       </MantineProvider>,
     )
-    expect(await screen.findByText('J1 pin 17, +3.3 V')).toBeTruthy()
-    expect(await screen.findByText(/rail J1 pin 17 \(\+3\.3 V\)/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('switch', { name: /J1 pin 18/ }))
+    expect(await screen.findByText('3.3 V')).toBeTruthy()
+    expect(await screen.findByText(/power 3\.3 V/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('switch', { name: /1\.8 V/ }))
     await waitFor(() => expect(calls.some((c) => c.tool === 'power_off')).toBe(true))
-    expect(calls.find((c) => c.tool === 'power_off')?.args).toEqual({ rail: 'j1_1v8' })
+    expect(calls.find((c) => c.tool === 'power_off')?.args).toEqual({ supply: '1v8' })
     unmount()
-    j1 = null
+    switched = false
     render(
       <MantineProvider>
         <PowerControls call={call} pollMs={60_000} />
       </MantineProvider>,
     )
-    expect(await screen.findByText('Internal 5 V')).toBeTruthy()
-    expect(screen.queryByText('J1 pin 17, +3.3 V')).toBeNull()
+    expect(await screen.findByText('5 V')).toBeTruthy()
+    expect(screen.queryByText('3.3 V')).toBeNull()
+  })
+
+  it('still reads the pre-supplies power_status keys and a profile with the legacy efuse', async () => {
+    const call = vi.fn(async (tool: string): Promise<BenchResult> => {
+      if (tool === 'power_status') return { text: '', structured: { internal: rail(false), external: rail(true) } } as BenchResult
+      if (tool === 'wiring') return { text: '', structured: { profile_name: 'p', default_profile: 'p', profiles: [{ name: 'p' }], efuse: 2, la_voltage: 3.3 } } as BenchResult
+      return { text: 'ok', structured: {} } as BenchResult
+    }) as unknown as BenchCall
+    render(
+      <MantineProvider>
+        <PowerControls call={call} pollMs={60_000} />
+      </MantineProvider>,
+    )
+    expect(await screen.findByText(/power external supply/)).toBeTruthy()
+    expect((screen.getByRole('switch', { name: /External/ }) as HTMLInputElement).checked).toBe(true)
   })
 })

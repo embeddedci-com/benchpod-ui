@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Box, Group, Paper, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { ownerLabel, pinWarnings, type LaPin } from '../bus/PinStrip'
-import { isJ1Rail, J1_RAILS, LA_CHANNEL_COUNT, WIRING_ROLES, type DebugPort, type UartParity, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
+import { isSwitchedSupply, LA_CHANNEL_COUNT, SUPPLY_LABELS, SWITCHED_SUPPLIES, WIRING_ROLES, type DebugPort, type UartParity, type Wiring, type WiringFieldIssue, type WiringRole } from './model'
 import {
   assignPin,
   PIN_ROLE_OPTIONS,
@@ -26,7 +26,7 @@ import { MonitorsEditor } from './MonitorsEditor'
 // The Pins editor: one wiring profile, pin by pin. The 14 LA pins in two rows, colored by what
 // they carry, with a dot for a pull resistor that is on; click a pin to set what it is used for,
 // its name and direction when it is a signal, its pull resistor, and the settings of its protocol
-// (UART baud on the UART pins, and so on). The I/O voltage and power rail the board is powered
+// (UART baud on the UART pins, and so on). The I/O voltage and supply the board is powered
 // with sit above. Host-neutral and controlled: it reads `wiring` and reports each change as a patch.
 
 export const PIN_KIND_COLORS: Record<PinKind, string> = { uart: 'blue', i2c: 'teal', swd: 'violet', jtag: 'indigo', spi: 'orange', signal: 'cyan' }
@@ -109,7 +109,7 @@ export function PinsEditor({
   disabled,
   initialPin = 1,
   live,
-  dutRails,
+  switchedSupplies,
 }: {
   /** The profile, effective (defaults filled in). */
   wiring: Wiring
@@ -122,8 +122,8 @@ export function PinsEditor({
   initialPin?: number
   /** What the pod reports for each pin right now (la_pins), when the host reads it: warnings, live level, owner. */
   live?: LaPin[] | null
-  /** The pod reports the hw fact `dut_rails` (digital board v4): offer the J1 supplies as the board's power. */
-  dutRails?: boolean
+  /** The pod reports the hw fact `supply_3v3_1v8` (BenchPod v4): offer the 3.3 V and 1.8 V supplies as the board's power. */
+  switchedSupplies?: boolean
 }) {
   const [sel, setSel] = useState(initialPin)
   const [picked, setPicked] = useState(false)
@@ -185,20 +185,18 @@ export function PinsEditor({
         />
         <Select
           size="xs"
-          label="Board power"
+          label="Supply"
           data={[
-            { value: '0', label: 'Not set' },
-            { value: '1', label: 'Internal 5 V' },
-            { value: '2', label: 'External supply' },
+            { value: '', label: 'Not set' },
+            { value: '5v', label: SUPPLY_LABELS['5v'] },
+            { value: 'external', label: SUPPLY_LABELS.external },
             // Only on a pod that has them (or when the profile already names one, so it shows).
-            ...(dutRails || isJ1Rail(wiring.efuse)
-              ? J1_RAILS.map((r) => ({ value: r, label: r === 'j1_3v3' ? 'J1 pin 17 (+3.3 V)' : 'J1 pin 18 (+1.8 V)' }))
-              : []),
+            ...(switchedSupplies || isSwitchedSupply(wiring.supply) ? SWITCHED_SUPPLIES.map((r) => ({ value: r, label: SUPPLY_LABELS[r] })) : []),
           ]}
-          value={String(wiring.efuse || 0)}
-          onChange={(v) => v != null && onChange({ efuse: isJ1Rail(v) ? v : Number(v) || undefined })}
+          value={wiring.supply || ''}
+          onChange={(v) => v != null && onChange({ supply: (v || undefined) as Wiring['supply'] })}
           allowDeselect={false}
-          error={fieldErr('efuse')}
+          error={fieldErr('supply')}
           disabled={disabled}
         />
       </Group>

@@ -1,9 +1,9 @@
 import { useMemo, useRef } from 'react'
 import { Button, Group, Stack, Text } from '@mantine/core'
-import { laChannelMap, LA_CHANNEL_COUNT, railLabel, type Wiring, type WiringRole } from './model'
+import { laChannelMap, LA_CHANNEL_COUNT, supplyLabel, type Wiring, type WiringRole } from './model'
 
 // The wiring profile drawn: the pod's LA channels on the left, what each is wired to on the right,
-// one line per wire colored by what it carries, the I/O voltage and power rail on top. A channel
+// one line per wire colored by what it carries, the I/O voltage and power supply on top. A channel
 // whose wiring is not saved yet is drawn dashed. Export as SVG to keep next to the bench.
 
 type Kind = 'swd' | 'jtag' | 'uart' | 'i2c' | 'spi' | 'signal'
@@ -49,7 +49,7 @@ export function WiringDiagram({
   const channels = useMemo(() => laChannelMap(wiring), [wiring])
   const height = TOP + LA_CHANNEL_COUNT * ROW + 16
   const io = wiring.la_mv ? `${wiring.la_mv / 1000} V` : 'not set'
-  const rail = railLabel(wiring.efuse)
+  const supply = supplyLabel(wiring.supply)
   const kinds = new Set<Kind>()
 
   const exportSvg = () => {
@@ -78,7 +78,7 @@ export function WiringDiagram({
           {title || 'Wiring'}
         </text>
         <text x={0} y={34} fontSize={11} fill="var(--mantine-color-dimmed)">
-          {`I/O voltage ${io}, target power ${rail}`}
+          {`I/O voltage ${io}, target power ${supply}`}
         </text>
         <text x={LEFT_W / 2} y={TOP - 4} fontSize={10} textAnchor="middle" fill="var(--mantine-color-dimmed)">
           BenchPod

@@ -17,7 +17,7 @@ afterEach(() => {
 function Harness({ onResult }: { onResult: (r: BenchResult) => void }) {
   const { call, dialog } = useBenchCall('/api/tool')
   useEffect(() => {
-    void call('power_on', { efuse: 1 }).then(onResult)
+    void call('power_on', { supply: '5v' }).then(onResult)
   }, [call, onResult])
   return <MantineProvider>{dialog}</MantineProvider>
 }
@@ -28,14 +28,14 @@ describe('useBenchCall', () => {
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
       const b = JSON.parse(init.body as string)
       bodies.push(b)
-      return new Response(JSON.stringify(b.confirmed ? { text: '{"efuse":1,"on":true}', structured: { efuse: 1, on: true } } : { confirm: true }))
+      return new Response(JSON.stringify(b.confirmed ? { text: '{"supply":"5v","on":true}', structured: { supply: '5v', on: true } } : { confirm: true }))
     }))
     const onResult = vi.fn()
     render(<Harness onResult={onResult} />)
     fireEvent.click(await screen.findByText('Run it'))
     await waitFor(() => expect(onResult).toHaveBeenCalled())
     expect(bodies.map((b) => b.confirmed)).toEqual([false, true])
-    expect(benchData(onResult.mock.calls[0][0])).toEqual({ efuse: 1, on: true })
+    expect(benchData(onResult.mock.calls[0][0])).toEqual({ supply: '5v', on: true })
   })
 
   it('a no is a declined result, not an error', async () => {
@@ -68,7 +68,7 @@ describe('createConfirmStore', () => {
     const st = createConfirmStore()
     const seen = vi.fn()
     st.subscribe(seen)
-    const first = st.ask('power_on', { efuse: 1 })
+    const first = st.ask('power_on', { supply: '5v' })
     const second = st.ask('i2c_open', { sda: 2 })
     await expect(first).resolves.toBe(false)
     expect(st.get()?.tool).toBe('i2c_open')
@@ -110,7 +110,7 @@ describe('FlashControls', () => {
     const seen: { tool: string; args: Record<string, unknown>; approved?: boolean }[] = []
     const call = vi.fn(async (tool: string, args: Record<string, unknown> = {}, opts?: { approved?: boolean }): Promise<BenchResult> => {
       seen.push({ tool, args, approved: opts?.approved })
-      if (tool === 'wiring') return { text: '', structured: { efuse: 1, swd_target: 'target/stm32f4x.cfg', profile: { swd_swclk: 11, swd_swdio: 12 } } }
+      if (tool === 'wiring') return { text: '', structured: { supply: '5v', swd_target: 'target/stm32f4x.cfg', profile: { swd_swclk: 11, swd_swdio: 12 } } }
       if (tool === 'flash') return { text: '', structured: flashOk, ms: 3600 }
       if (tool === 'power_cycle_and_capture') return { text: 'PinConflictError: uart_proxy_start: pin conflict: LA3 is in use by uart_rx', is_error: true }
       return { text: '', structured: {} }
@@ -133,7 +133,7 @@ describe('FlashControls', () => {
     cleanup()
     const { FlashControls } = await import('./FlashControls')
     const call = vi.fn(async (tool: string): Promise<BenchResult> => {
-      if (tool === 'wiring') return { text: '', structured: { efuse: 1, swd_target: 'target/stm32f4x.cfg', profile: {} } }
+      if (tool === 'wiring') return { text: '', structured: { supply: '5v', swd_target: 'target/stm32f4x.cfg', profile: {} } }
       return { text: '', structured: {} }
     })
     render(<MantineProvider><FlashControls call={call} firmware={store} /></MantineProvider>)
@@ -145,7 +145,7 @@ describe('FlashControls', () => {
 describe('FlashControls debug port', () => {
   const store = { upload: vi.fn(), recent: async () => [{ name: 'app.elf', path: '/f/app.elf', size: 2048, modified: '' }] }
   const callWith = (profile: Record<string, unknown>, swd_target = 'target/stm32f4x.cfg') =>
-    vi.fn(async (tool: string): Promise<BenchResult> => (tool === 'wiring' ? { text: '', structured: { efuse: 1, swd_target, profile } } : { text: '', structured: {} }))
+    vi.fn(async (tool: string): Promise<BenchResult> => (tool === 'wiring' ? { text: '', structured: { supply: '5v', swd_target, profile } } : { text: '', structured: {} }))
 
   it('says JTAG for JTAG-only wiring and enables Flash', async () => {
     cleanup()

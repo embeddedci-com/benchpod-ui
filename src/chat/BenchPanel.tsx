@@ -10,12 +10,14 @@ import { TerminalText } from '../results/ResultView'
 // one-line summary of each and opens the panel at it.
 
 export type ConsoleEntry = { id: string; dir: 'out' | 'in'; text: string }
-/** A power profile (measure_power, power_profile_stop), or one reading of the rails (power_status). */
+/** A power profile (measure_power, power_profile_stop), or one reading of the supplies (power_status). */
 export type PowerEntry = { id: string; title: string; profile?: PowerProfile; rails?: { name: string; on: boolean; volts: number; amps: number; fault: boolean }[] }
 export type CaptureEntry = { id: string; tool: string; title: string; adc?: AdcCapture; la?: LaCapture; decoded?: { protocol: string; text: string } }
 
 type PowerProfile = {
-  efuse: number
+  /** '5v' or 'external'; a monitor profile has `monitor` (its name) instead. */
+  supply?: string
+  monitor?: string
   rate_hz: number
   n: number
   duration: number
@@ -37,9 +39,12 @@ function isPowerProfile(v: unknown): v is PowerProfile {
 
 type Rail = { enabled: boolean; fault: boolean; bus_voltage: number; current: number }
 
-function isPowerStatus(v: unknown): v is { internal: Rail; external: Rail } {
-  const o = v as { internal?: Rail; external?: Rail }
-  return !!o && typeof o.internal?.bus_voltage === 'number' && typeof o.external?.bus_voltage === 'number'
+type PowerStatusLike = { supplies?: { '5v'?: Rail; external?: Rail }; internal?: Rail; external?: Rail }
+const fiveOf = (o: PowerStatusLike) => o.supplies?.['5v'] ?? o.internal
+const externalOf = (o: PowerStatusLike) => o.supplies?.external ?? o.external
+function isPowerStatus(v: unknown): v is PowerStatusLike {
+  const o = v as PowerStatusLike
+  return !!o && typeof fiveOf(o)?.bus_voltage === 'number' && typeof externalOf(o)?.bus_voltage === 'number'
 }
 
 /** A profile's trace in the shape the envelope chart draws. */
@@ -99,9 +104,9 @@ export function benchOutputs(items: ChatItem[]): BenchOutputs {
     }
     if (isPowerStatus(st)) {
       const rail = (name: string, r: Rail) => ({ name, on: r.enabled, volts: r.bus_voltage, amps: r.current, fault: r.fault })
-      const rails = [rail('Internal 5 V', st.internal), rail('External', st.external)]
+      const rails = [rail('5 V', fiveOf(st) as Rail), rail('External', externalOf(st) as Rail)]
       const on = rails.filter((r) => r.on)
-      out.power.push({ id: it.id, title: on.length ? on.map((r) => `${r.name} ${fmtSi(r.amps, 'A')}`).join(' · ') : 'Rails off', rails })
+      out.power.push({ id: it.id, title: on.length ? on.map((r) => `${r.name} ${fmtSi(r.amps, 'A')}`).join(' · ') : 'Supplies off', rails })
       continue
     }
     if (isAdcCapture(st)) out.captures.push({ id: it.id, tool: name, title: adcTitle(st), adc: st })
@@ -258,7 +263,7 @@ export function BenchPanel({
                       <Text size="xs" ff="monospace" c="dimmed">avg {fmtSi(pow.profile.avg_voltage, 'V')}</Text>
                       <Text size="xs" ff="monospace" c="dimmed">power {fmtSi(pow.profile.avg_power, 'W')}</Text>
                       <Text size="xs" ff="monospace" c="dimmed">energy {fmtSi(pow.profile.energy, 'J')}</Text>
-                      {pow.profile.fault ? <Text size="xs" ff="monospace" c="red">eFuse tripped</Text> : null}
+                      {pow.profile.fault ? <Text size="xs" ff="monospace" c="red">Supply tripped</Text> : null}
                     </Group>
                   ) : null}
                   {pow.rails?.map((r) => (

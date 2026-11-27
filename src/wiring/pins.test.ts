@@ -3,7 +3,7 @@ import { canonicalPulls, coerceStoredWiring, effectiveWiring, LA_PULLS, pullDire
 import { assignPin, pinPullDirs, pinUseChoice, pinViews, pullSwitchLabel, setPinPull, signalUse, updateSignal } from './pins'
 
 const apply = (w: Wiring, patch: Partial<Wiring>): Wiring => ({ ...w, ...patch })
-const base: Wiring = { ...WIRING_UNDEFINED, la_mv: 3300, efuse: 1, i2c_addr: '0x76', uart_rx: 5, uart_tx: 4, i2c_sda: 1, i2c_scl: 2, signals: [{ name: 'READY', la: 9, direction: 'input', active_low: false, description: '' }] }
+const base: Wiring = { ...WIRING_UNDEFINED, la_mv: 3300, supply: '5v', i2c_addr: '0x76', uart_rx: 5, uart_tx: 4, i2c_sda: 1, i2c_scl: 2, signals: [{ name: 'READY', la: 9, direction: 'input', active_low: false, description: '' }] }
 
 describe('pinViews', () => {
   it('shows each pin with what is on it and its pull resistor', () => {
@@ -137,7 +137,7 @@ describe('pulls', () => {
 
 describe('JTAG pins in the editor', () => {
   it('puts a JTAG role on a free pin, and keeps SWD when TCK joins SWCLK', () => {
-    const w = effectiveWiring({ version: 2, la_mv: 3300, efuse: 1, i2c_addr: '0x76', swd_swclk: 11, swd_swdio: 12 })
+    const w = effectiveWiring({ version: 2, la_mv: 3300, supply: '5v', i2c_addr: '0x76', swd_swclk: 11, swd_swdio: 12 })
     const a = apply(w, assignPin(w, 3, 'jtag_tdi'))
     expect(a.jtag_tdi).toBe(3)
     const b = apply(a, assignPin(a, 11, 'jtag_tck'))
