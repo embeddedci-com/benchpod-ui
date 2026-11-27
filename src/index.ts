@@ -110,6 +110,7 @@ export {
   supplyOf,
   supplyLabel,
   legacyEfuse,
+  supplyToolArgs,
   type WiringSignal,
   type WiringMonitor,
   type MonitorChip,

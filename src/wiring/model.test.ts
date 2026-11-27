@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   supplyLabel,
   legacyEfuse,
+  supplyToolArgs,
   coerceStoredWiring,
   effectiveWiring,
   firstFreeLaChannel,
@@ -385,5 +386,14 @@ describe('monitors', () => {
   it('needs pins when the profile has no I2C pins to default to', () => {
     expect(fields(validateWiring({ i2c_sda: null, monitors: [ok] }).errors)).toEqual(['monitors[0].sda'])
     expect(validateWiring({ i2c_sda: null, i2c_scl: null, monitors: [{ ...ok, sda: 13, scl: 14 }] }).errors).toEqual([])
+  })
+})
+
+describe('supplyToolArgs', () => {
+  it('sends efuse for 5 V and external (every released MCP), supply only for the switched ones', () => {
+    expect(supplyToolArgs('5v')).toEqual({ efuse: 1 })
+    expect(supplyToolArgs('external')).toEqual({ efuse: 2 })
+    expect(supplyToolArgs('3v3')).toEqual({ supply: '3v3' })
+    expect(supplyToolArgs('1v8')).toEqual({ supply: '1v8' })
   })
 })

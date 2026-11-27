@@ -127,6 +127,12 @@ export function supplyOf(v: unknown): Supply | null {
 /** The legacy `efuse` number of a supply (1 = 5 V, 2 = external); undefined for the switched ones. */
 export const legacyEfuse = (s: unknown): 1 | 2 | undefined => (s === '5v' ? 1 : s === 'external' ? 2 : undefined)
 
+/** The power tools' arguments for a supply. Every released MCP takes `efuse` 1/2 for 5 V and external,
+ *  so those go as `efuse`; only the switched 3.3 V and 1.8 V need `supply` (MCP 4.0.7+). Send `supply`
+ *  for all four once 4.0.7 is the oldest MCP the web app and the desktop app run. */
+export const supplyToolArgs = (s: Supply): Record<string, unknown> =>
+  s === '5v' ? { efuse: 1 } : s === 'external' ? { efuse: 2 } : { supply: s }
+
 /** The profile's supply as a sentence fragment: "5 V", "external supply", "3.3 V", "not set". Accepts the legacy efuse number too. */
 export function supplyLabel(supply: unknown): string {
   const s = supplyOf(supply)

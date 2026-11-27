@@ -3,7 +3,7 @@ import { Alert, Badge, Button, Checkbox, Divider, FileButton, Group, Select, Sta
 import { TerminalText } from '../results/ResultView'
 import { HelpTip } from '../help/HelpTip'
 import { debugPortMissing, debugTransport } from '../wiring/transport'
-import { isSwitchedSupply, supplyOf } from '../wiring/model'
+import { isSwitchedSupply, supplyOf, supplyToolArgs } from '../wiring/model'
 import { BusMasterNote, useBusMasterGate } from './busMasters'
 import { benchData, benchError, type BenchCall } from './benchCall'
 
@@ -131,12 +131,12 @@ export function FlashControls({ call, firmware }: { call: BenchCall; firmware: F
       // The console has the UART open: power-cycle, and the boot log shows in the console.
       if (e && /in use by uart/i.test(e)) {
         const supply = profileSupply ?? '5v'
-        const off = await call('power_off', { supply })
+        const off = await call('power_off', supplyToolArgs(supply))
         if (off.declined) return
         const offErr = benchError(off)
         if (offErr) return setError(offErr)
         await sleep(500)
-        const on = await call('power_on', { supply }, { approved: true })
+        const on = await call('power_on', supplyToolArgs(supply), { approved: true })
         const onErr = benchError(on)
         if (onErr) return setError(onErr)
         setBoot(null)

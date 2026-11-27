@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Badge, Box, Button, Group, Select, Stack, Switch, Text, useComputedColorScheme } from '@mantine/core'
 import { fmtSi } from '../results/AdcEnvelope'
-import { supplyLabel, supplyOf, type Supply } from '../wiring/model'
+import { supplyLabel, supplyOf, supplyToolArgs, type Supply } from '../wiring/model'
 import { benchData, benchError, type BenchCall } from './benchCall'
 
 // Target power by hand: each supply's switch, its voltage and the current the board draws, read
@@ -47,8 +47,8 @@ type WiringInfo = {
   profiles?: { name: string; rev: number }[]
 }
 
-/** The power tools' arguments for a supply. */
-const supplyArgs = (r: SupplyName): Record<string, unknown> => ({ supply: r })
+/** The power tools' arguments for a supply (see supplyToolArgs). */
+const supplyArgs = (r: SupplyName): Record<string, unknown> => supplyToolArgs(r)
 
 export function PowerControls({ call, pollMs = POLL_MS }: { call: BenchCall; pollMs?: number }) {
   const [status, setStatus] = useState<PowerStatus | null>(null)
